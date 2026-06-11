@@ -79,7 +79,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MyApplicationTheme {
+            val amoledMode by viewModel.isAmoledMode.collectAsStateWithLifecycle()
+            MyApplicationTheme(amoledMode = amoledMode) {
                 Scaffold(
                     modifier = Modifier
                         .fillMaxSize()
@@ -149,6 +150,10 @@ fun VpnDashboard(
         }
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.loadInstalledApps(context)
+    }
+
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val isFa = (appLanguage == "fa")
 
@@ -157,6 +162,11 @@ fun VpnDashboard(
     var showServerSheet by remember { mutableStateOf(false) }
     var showVpsAssistant by remember { mutableStateOf(false) }
     var showAddServerDialog by remember { mutableStateOf(false) }
+    var showAdvancedSettingsDialog by remember { mutableStateOf(false) }
+    
+    val isAmoledMode by viewModel.isAmoledMode.collectAsStateWithLifecycle()
+    val isSplitTunnelingEnabled by viewModel.isSplitTunnelingEnabled.collectAsStateWithLifecycle()
+    val splitApps by viewModel.splitApps.collectAsStateWithLifecycle()
     
     var qrProfileToShow by remember { mutableStateOf<VpnProfile?>(null) }
     var showQrScannerDialog by remember { mutableStateOf(false) }
@@ -290,6 +300,22 @@ fun VpnDashboard(
                                 imageVector = Icons.Default.Dns,
                                 contentDescription = if (isFa) "لیست سرورها" else "Server List",
                                 tint = CobaltBlue,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { showAdvancedSettingsDialog = true },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(Color.White.copy(alpha = 0.05f), CircleShape)
+                                .border(1.dp, GlassBorder, CircleShape)
+                                .testTag("advanced_settings_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = if (isFa) "امکانات پیشرفته" else "Advanced Settings",
+                                tint = CyberGreen,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -730,6 +756,21 @@ fun VpnDashboard(
                     showQrScannerDialog = false
                 },
                 onDismiss = { showQrScannerDialog = false }
+            )
+        }
+
+        // --- DIALOG: Advanced Settings Hub ---
+        if (showAdvancedSettingsDialog) {
+            AdvancedSettingsDialog(
+                isFa = isFa,
+                isAmoledMode = isAmoledMode,
+                isSplitEnabled = isSplitTunnelingEnabled,
+                splitApps = splitApps,
+                show = showAdvancedSettingsDialog,
+                onDismiss = { showAdvancedSettingsDialog = false },
+                onToggleAmoled = { viewModel.toggleAmoledMode() },
+                onToggleSplit = { viewModel.setSplitTunnelingEnabled(it) },
+                onToggleApp = { viewModel.toggleAppInSplitTunnel(it) }
             )
         }
 
@@ -4530,6 +4571,298 @@ fun SmartQrSharingHub(
                         text = if (isFa) "چسباندنلینک" else "Paste Link",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+// --- NEW COMPONENT: AdvancedSettingsDialog for AMOLED, Split Tunneling, Reality ---
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AdvancedSettingsDialog(
+    isFa: Boolean,
+    isAmoledMode: Boolean,
+    isSplitEnabled: Boolean,
+    splitApps: List<com.example.AppInfo>,
+    show: Boolean,
+    onDismiss: () -> Unit,
+    onToggleAmoled: () -> Unit,
+    onToggleSplit: (Boolean) -> Unit,
+    onToggleApp: (String) -> Unit
+) {
+    if (!show) return
+
+    var appSearchQuery by remember { mutableStateOf("") }
+    val filteredApps = remember(splitApps, appSearchQuery) {
+        if (appSearchQuery.isBlank()) {
+            splitApps
+        } else {
+            splitApps.filter {
+                it.appName.contains(appSearchQuery, ignoreCase = true) ||
+                        it.packageName.contains(appSearchQuery, ignoreCase = true)
+            }
+        }
+    }
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+                .border(1.dp, GlassBorder, RoundedCornerShape(16.dp)),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                // Header Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (isFa) "امکانات پیشرفته محصول" else "Advanced Settings",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = CyanGlow
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = Color.White.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Scenario 1: AMOLED Dark Mode
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White.copy(alpha = 0.03f), RoundedCornerShape(10.dp))
+                        .padding(10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DarkMode,
+                                contentDescription = null,
+                                tint = CobaltBlue,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = if (isFa) "پوسته تیره عمیق AMOLED" else "AMOLED Black Theme",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = if (isFa) "مشکی مطلق جهت مصرف بهینه باتری" else "Pitch black base for energy saving",
+                                fontSize = 9.sp,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = isAmoledMode,
+                        onCheckedChange = { onToggleAmoled() },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = CyanGlow,
+                            checkedTrackColor = CyanGlow.copy(alpha = 0.3f),
+                            uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                            uncheckedTrackColor = Color.White.copy(alpha = 0.1f)
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Scenario 2: Split Tunneling
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.White.copy(alpha = 0.03f), RoundedCornerShape(10.dp))
+                        .padding(10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Apps,
+                                contentDescription = null,
+                                tint = CyanGlow,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = if (isFa) "تونل تفکیک‌شده (Split Tunneling)" else "Split Tunneling",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = if (isFa) "عبور مستقیم برنامه‌های بانکی بدون پروکسی" else "Bypass local or bank apps automatically",
+                                fontSize = 9.sp,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = isSplitEnabled,
+                        onCheckedChange = onToggleSplit,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = CyanGlow,
+                            checkedTrackColor = CyanGlow.copy(alpha = 0.3f),
+                            uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                            uncheckedTrackColor = Color.White.copy(alpha = 0.1f)
+                        )
+                    )
+                }
+
+                if (isSplitEnabled) {
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = appSearchQuery,
+                        onValueChange = { appSearchQuery = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = {
+                            Text(
+                                text = if (isFa) "جستجوی برنامه‌ها..." else "Search apps...",
+                                fontSize = 11.sp,
+                                color = TextMuted
+                            )
+                        },
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodySmall.copy(color = Color.White),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = CyanGlow,
+                            unfocusedBorderColor = GlassBorder,
+                            focusedContainerColor = Color.White.copy(alpha = 0.04f),
+                            unfocusedContainerColor = Color.White.copy(alpha = 0.02f)
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                            .border(1.dp, GlassBorder, RoundedCornerShape(10.dp)),
+                        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.01f))
+                    ) {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(4.dp)
+                        ) {
+                            items(filteredApps) { app ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onToggleApp(app.packageName) }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        modifier = Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(26.dp)
+                                                .background(
+                                                    if (app.isBypassed) CyanGlow.copy(alpha = 0.15f)
+                                                    else Color.White.copy(alpha = 0.05f),
+                                                    CircleShape
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = app.appName.firstOrNull()?.uppercase()?.toString() ?: "A",
+                                                color = if (app.isBypassed) CyanGlow else Color.White,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text(
+                                                text = app.appName,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                            Text(
+                                                text = app.packageName,
+                                                fontSize = 8.sp,
+                                                color = TextSecondary,
+                                                maxLines = 1
+                                            )
+                                        }
+                                    }
+                                    Checkbox(
+                                        checked = app.isBypassed,
+                                        onCheckedChange = { onToggleApp(app.packageName) },
+                                        colors = CheckboxDefaults.colors(
+                                            checkedColor = CyanGlow,
+                                            uncheckedColor = GlassBorder
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = CyanGlow)
+                ) {
+                    Text(
+                        text = if (isFa) "ذخیره و بستن" else "Apply Settings",
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF061415),
+                        fontSize = 12.sp
                     )
                 }
             }

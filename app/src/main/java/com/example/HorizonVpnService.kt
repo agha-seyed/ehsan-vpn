@@ -32,6 +32,7 @@ class HorizonVpnService : VpnService() {
         const val EXTRA_IP = "com.example.horizonvpn.EXTRA_IP"
         const val EXTRA_PORT = "com.example.horizonvpn.EXTRA_PORT"
         const val EXTRA_PROTOCOL = "com.example.horizonvpn.EXTRA_PROTOCOL"
+        const val EXTRA_BYPASS_APPS = "com.example.horizonvpn.EXTRA_BYPASS_APPS"
 
         // State & Stats flows for direct Compose binding
         private val _vpnState = MutableStateFlow("DISCONNECTED") // CONNECTED, CONNECTING, DISCONNECTED, ERROR
@@ -67,7 +68,7 @@ class HorizonVpnService : VpnService() {
                     val protocol = intent.getStringExtra(EXTRA_PROTOCOL) ?: "VLESS"
                     
                     _connectedServer.value = "$serverIp:$port ($protocol)"
-                    startVpn(serverIp, port)
+                    startVpn(serverIp, port, intent)
                 }
                 ACTION_DISCONNECT -> {
                     stopVpn()
@@ -77,7 +78,7 @@ class HorizonVpnService : VpnService() {
         return START_STICKY
     }
 
-    private fun startVpn(serverIp: String, port: Int) {
+    private fun startVpn(serverIp: String, port: Int, intent: Intent?) {
         stopVpn() // Ensure old connection is closed
         _vpnState.value = "CONNECTING"
         
@@ -105,6 +106,18 @@ class HorizonVpnService : VpnService() {
                             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
                         )
                     )
+
+                // Apply Split Tunneling if configured
+                val bypassApps = intent?.getStringArrayListExtra(EXTRA_BYPASS_APPS)
+                if (!bypassApps.isNullOrEmpty()) {
+                    for (appPkg in bypassApps) {
+                        try {
+                            builder.addDisallowedApplication(appPkg)
+                        } catch (e: Exception) {
+                            Log.e("HorizonVpnService", "Failed to disallow application: $appPkg", e)
+                        }
+                    }
+                }
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     builder.setMetered(false) // Optimize connection data

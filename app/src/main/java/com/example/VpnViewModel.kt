@@ -81,6 +81,69 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
     val totalBytesDown: StateFlow<Long> = HorizonVpnService.totalBytesDown
     val totalBytesUp: StateFlow<Long> = HorizonVpnService.totalBytesUp
 
+    // AMOLED Dark Mode State
+    private val _isAmoledMode = MutableStateFlow(false)
+    val isAmoledMode: StateFlow<Boolean> = _isAmoledMode
+
+    fun toggleAmoledMode() {
+        _isAmoledMode.value = !_isAmoledMode.value
+    }
+
+    // Split Tunneling States
+    private val _isSplitTunnelingEnabled = MutableStateFlow(false)
+    val isSplitTunnelingEnabled: StateFlow<Boolean> = _isSplitTunnelingEnabled
+
+    private val _splitApps = MutableStateFlow<List<AppInfo>>(emptyList())
+    val splitApps: StateFlow<List<AppInfo>> = _splitApps
+
+    fun setSplitTunnelingEnabled(enabled: Boolean) {
+        _isSplitTunnelingEnabled.value = enabled
+    }
+
+    fun toggleAppInSplitTunnel(packageName: String) {
+        val current = _splitApps.value
+        _splitApps.value = current.map {
+            if (it.packageName == packageName) it.copy(isBypassed = !it.isBypassed) else it
+        }
+    }
+
+    fun loadInstalledApps(context: Context) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                try {
+                    val pm = context.packageManager
+                    val packages = pm.getInstalledPackages(0)
+                    val list = packages.mapNotNull { pkg ->
+                        val appName = pkg.applicationInfo?.loadLabel(pm)?.toString() ?: pkg.packageName
+                        val isSystem = (pkg.applicationInfo?.flags ?: 0) and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0
+                        if (!isSystem && pkg.packageName != context.packageName) {
+                            AppInfo(appName = appName, packageName = pkg.packageName, isBypassed = false)
+                        } else null
+                    }.sortedBy { it.appName.lowercase() }
+                    
+                    val fallbackList = if (list.isEmpty()) {
+                        listOf(
+                            AppInfo("Telegram", "org.telegram.messenger", true),
+                            AppInfo("Instagram", "com.instagram.android", true),
+                            AppInfo("YouTube", "com.google.android.youtube", false),
+                            AppInfo("Chrome", "com.android.chrome", false),
+                            AppInfo("WhatsApp", "com.whatsapp", true),
+                            AppInfo("Melli Bank (بانک ملی)", "ir.bmi.app", true),
+                            AppInfo("Mellat Bank (بانک ملت)", "ir.mellatbank.mobile", true)
+                        )
+                    } else list
+
+                    val currentMap = _splitApps.value.associate { it.packageName to it.isBypassed }
+                    _splitApps.value = fallbackList.map { app ->
+                        app.copy(isBypassed = currentMap[app.packageName] ?: app.isBypassed)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
     // Bilingual state state flow: "fa" (Farsi) or "en" (English)
     private val _appLanguage = MutableStateFlow("fa")
     val appLanguage: StateFlow<String> = _appLanguage
@@ -105,6 +168,17 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
             
         activeProfile = repository.activeProfile
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+        // Preload default split apps
+        _splitApps.value = listOf(
+            AppInfo("Telegram", "org.telegram.messenger", true),
+            AppInfo("Instagram", "com.instagram.android", true),
+            AppInfo("YouTube", "com.google.android.youtube", false),
+            AppInfo("Chrome", "com.android.chrome", false),
+            AppInfo("WhatsApp", "com.whatsapp", true),
+            AppInfo("Melli Bank (بانک ملی)", "ir.bmi.app", true),
+            AppInfo("Mellat Bank (بانک ملت)", "ir.mellatbank.mobile", true)
+        )
     }
 
     /**
@@ -166,8 +240,11 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            // Extract query parameters like SNI
+            // Extract query parameters like SNI & Reality Keys (pbk, sid, flow)
             var sni = "www.google.com"
+            var isReality = false
+            var publicKey = ""
+            var shortId = ""
             var cleanMain = mainContent
             if (mainContent.contains("?")) {
                 val queryParts = mainContent.split("?", limit = 2)
@@ -178,13 +255,23 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
                     val pair = param.split("=", limit = 2)
                     if (pair.size == 2) {
                         val key = pair[0].trim().lowercase()
-                        val value = pair[1].trim()
+                        val value = URLDecoder.decode(pair[1].trim(), "UTF-8")
                         if (key == "sni" || key == "host") {
-                            sni = URLDecoder.decode(value, "UTF-8")
+                            sni = value
+                        } else if (key == "security" && value == "reality") {
+                            isReality = true
+                        } else if (key == "pbk" || key == "publickey") {
+                            publicKey = value
+                        } else if (key == "sid" || key == "shortid") {
+                            shortId = value
                         }
                     }
                 }
             }
+
+            // Adjust scheme label based on reality parameters detected
+            val finalScheme = if (isReality || publicKey.isNotEmpty() || scheme == "VLESS (Reality)") "VLESS (Reality)" else scheme
+            val finalName = if (isReality && !name.contains("Reality")) "$name [Reality]" else name
 
             // Split credential and address: secretKey@ip:port
             if (cleanMain.contains("@")) {
@@ -198,11 +285,11 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
                     val port = hostPort[1].trim().toIntOrNull() ?: 443
                     
                     val newProfile = VpnProfile(
-                        name = name,
+                        name = finalName,
                         serverIp = serverIp,
                         port = port,
                         secretKey = secretKey,
-                        protocol = scheme,
+                        protocol = finalScheme,
                         sni = sni
                     )
                     insertProfile(newProfile)
@@ -267,6 +354,11 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
                 putExtra(HorizonVpnService.EXTRA_IP, active.serverIp)
                 putExtra(HorizonVpnService.EXTRA_PORT, active.port)
                 putExtra(HorizonVpnService.EXTRA_PROTOCOL, active.protocol)
+
+                if (_isSplitTunnelingEnabled.value) {
+                    val bypassedAppsList = ArrayList(_splitApps.value.filter { it.isBypassed }.map { it.packageName })
+                    putStringArrayListExtra(HorizonVpnService.EXTRA_BYPASS_APPS, bypassedAppsList)
+                }
             }
             context.startService(intent)
         }
@@ -565,4 +657,11 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 }
+
+// Data class representation for Split Tunneling App configuration
+data class AppInfo(
+    val appName: String,
+    val packageName: String,
+    val isBypassed: Boolean = false
+)
 
