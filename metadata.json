@@ -1,0 +1,6 @@
+{
+  "name": "Ehsan VPN",
+  "description": "A gorgeous, high-performance VPN client featuring the premium Teal-Gold Frosted Glass Theme, bilingual Farsi/English support, and VLESS/SS configuration link parser.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
