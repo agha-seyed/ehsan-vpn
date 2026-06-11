@@ -164,6 +164,9 @@ class HorizonVpnService : VpnService() {
             
             _totalBytesDown.value += (dSpeed * 1024).toLong()
             _totalBytesUp.value += (uSpeed * 1024).toLong()
+
+            // Real-time speed output nested on the system tray widget
+            showNotification("سپر امنیتی فعال است", "درحال مسیریابی کدگذاری شده", dSpeed)
         }
     }
 
@@ -179,21 +182,55 @@ class HorizonVpnService : VpnService() {
         }
     }
 
-    private fun showNotification(title: String, text: String) {
+    private fun showNotification(title: String, text: String, downloadKbps: Float = 0f) {
         val intent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        val disconnectIntent = Intent(this, HorizonVpnService::class.java).apply {
+            action = ACTION_DISCONNECT
+        }
+        val disconnectPendingIntent = PendingIntent.getService(
+            this,
+            1,
+            disconnectIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val speedText = if (downloadKbps > 0f) {
+            val formattedSpeed = if (downloadKbps > 1024f) {
+                String.format("%.2f MB/s", downloadKbps / 1024f)
+            } else {
+                String.format("%.1f KB/s", downloadKbps)
+            }
+            " | سرعت: $formattedSpeed"
+        } else {
+            ""
+        }
+
         val notification = NotificationCompat.Builder(this, "vpn_status_channel")
-            .setContentTitle(title)
-            .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("🛡️ $title")
+            .setContentText("$text$speedText")
+            .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "قطع سریع اتصال",
+                disconnectPendingIntent
+            )
             .build()
 
-        startForeground(1, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(
+                1,
+                notification,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED
+            )
+        } else {
+            startForeground(1, notification)
+        }
     }
 
     override fun onDestroy() {

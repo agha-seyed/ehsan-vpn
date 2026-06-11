@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
 import android.widget.Toast
+import kotlinx.coroutines.delay
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -37,6 +38,11 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -112,6 +118,37 @@ fun VpnDashboard(
     val allServers by viewModel.allProfiles.collectAsStateWithLifecycle()
     val activeServer by viewModel.activeProfile.collectAsStateWithLifecycle()
 
+    val isPingingAll by viewModel.isPingingAll.collectAsStateWithLifecycle()
+    val isTestingSpeed by viewModel.isTestingSpeed.collectAsStateWithLifecycle()
+    val speedProgress by viewModel.speedProgress.collectAsStateWithLifecycle()
+    val testedDownloadMbps by viewModel.testedDownloadMbps.collectAsStateWithLifecycle()
+    val testedUploadMbps by viewModel.testedUploadMbps.collectAsStateWithLifecycle()
+    val testedPingMs by viewModel.testedPingMs.collectAsStateWithLifecycle()
+
+    val isDiagnosing by viewModel.isDiagnosing.collectAsStateWithLifecycle()
+    val dnsStatus by viewModel.dnsStatus.collectAsStateWithLifecycle()
+    val gatewayStatus by viewModel.gatewayStatus.collectAsStateWithLifecycle()
+    val sniStatus by viewModel.sniStatus.collectAsStateWithLifecycle()
+    val diagnosticsAdvice by viewModel.diagnosticsAdvice.collectAsStateWithLifecycle()
+
+    val isTestingLivePing by viewModel.isTestingLivePing.collectAsStateWithLifecycle()
+    val livePingMs by viewModel.livePingMs.collectAsStateWithLifecycle()
+    val liveJitterMs by viewModel.liveJitterMs.collectAsStateWithLifecycle()
+    val livePacketLoss by viewModel.livePacketLoss.collectAsStateWithLifecycle()
+
+    var connectionDurationSeconds by remember { mutableStateOf(0L) }
+    LaunchedEffect(vpnState) {
+        if (vpnState == "CONNECTED") {
+            connectionDurationSeconds = 0L
+            while (true) {
+                delay(1000)
+                connectionDurationSeconds++
+            }
+        } else {
+            connectionDurationSeconds = 0L
+        }
+    }
+
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val isFa = (appLanguage == "fa")
 
@@ -120,6 +157,9 @@ fun VpnDashboard(
     var showServerSheet by remember { mutableStateOf(false) }
     var showVpsAssistant by remember { mutableStateOf(false) }
     var showAddServerDialog by remember { mutableStateOf(false) }
+    
+    var qrProfileToShow by remember { mutableStateOf<VpnProfile?>(null) }
+    var showQrScannerDialog by remember { mutableStateOf(false) }
 
     AnimatedContent(
         targetState = showSplash,
@@ -427,6 +467,37 @@ fun VpnDashboard(
                 }
             }
 
+            // Real-time Active Pinpoint Ping Diagnostic Widget
+            item {
+                LivePingDiagnosticCard(
+                    isFa = isFa,
+                    isTesting = isTestingLivePing,
+                    pingMs = livePingMs,
+                    jitterMs = liveJitterMs,
+                    packetLoss = livePacketLoss,
+                    onTestPing = { viewModel.testLivePingOfActive() }
+                )
+            }
+
+            // Real-time Waving Traffic Graph (Teal-Gold Theme)
+            item {
+                LiveTrafficGraphCard(
+                    downloadSpeed = downloadSpeed,
+                    uploadSpeed = uploadSpeed,
+                    isFa = isFa
+                )
+            }
+
+            // Immersive Detailed Session Technical Blueprint & Connection Info
+            item {
+                ActiveConnectionBlueprintCard(
+                    activeServer = activeServer,
+                    durationSeconds = connectionDurationSeconds,
+                    vpnState = vpnState,
+                    isFa = isFa
+                )
+            }
+
             // Current Server Widget
             item {
                 Card(
@@ -486,7 +557,7 @@ fun VpnDashboard(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
-                                text = activeServer?.let { if (it.latencyMs > 0) "${it.latencyMs} ms" else (if (isFa) "جدید" else "NEW") } ?: "",
+                               text = activeServer?.let { if (it.latencyMs > 0) "${it.latencyMs} ms" else (if (isFa) "جدید" else "NEW") } ?: "",
                                 color = CyberGreen,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold
@@ -499,6 +570,47 @@ fun VpnDashboard(
                         }
                     }
                 }
+            }
+
+            // Centered Smart Sharing & QR Scanner Hub
+            item {
+                SmartQrSharingHub(
+                    activeServer = activeServer,
+                    isFa = isFa,
+                    onScanQr = { showQrScannerDialog = true },
+                    onShareCurrent = {
+                        activeServer?.let { qrProfileToShow = it }
+                    },
+                    onPasteConfig = {
+                        showQrScannerDialog = true
+                    }
+                )
+            }
+
+            // Dynamic Interactive Speedometer Card
+            item {
+                SpeedTestCardComponent(
+                    isFa = isFa,
+                    isTesting = isTestingSpeed,
+                    progress = speedProgress,
+                    downloadMbps = testedDownloadMbps,
+                    uploadMbps = testedUploadMbps,
+                    pingMs = testedPingMs,
+                    onStartTest = { viewModel.startSpeedTest() }
+                )
+            }
+
+            // Stateful Auto-Diagnostics Card
+            item {
+                DiagnosisCardComponent(
+                    isFa = isFa,
+                    isDiagnosing = isDiagnosing,
+                    dnsStatus = dnsStatus,
+                    gatewayStatus = gatewayStatus,
+                    sniStatus = sniStatus,
+                    advice = diagnosticsAdvice,
+                    onRunDiagnosis = { viewModel.runSelfDiagnosis() }
+                )
             }
 
             // Helpful VPS Banner Reminder for Server activation
@@ -569,6 +681,17 @@ fun VpnDashboard(
             ServerProfilesSheet(
                 profiles = allServers,
                 activeProfile = activeServer,
+                isPingingAll = isPingingAll,
+                onPingAll = { viewModel.pingAllServers() },
+                onImportProfile = { viewModel.insertProfile(it) },
+                onAutoConnectBest = {
+                    viewModel.selectBestServerAndConnect(context)
+                    showServerSheet = false
+                    Toast.makeText(context, if (isFa) "پینگ همگانی کامل شد و سریع‌ترین سرور متصل گردید!" else "Bypassed via fastest gateway successfully!", Toast.LENGTH_SHORT).show()
+                },
+                onScanQrClick = {
+                    showQrScannerDialog = true
+                },
                 onSelectProfile = { profile ->
                     viewModel.selectActiveProfile(profile.id)
                     showServerSheet = false
@@ -581,8 +704,32 @@ fun VpnDashboard(
                 onAddNewProfileClick = {
                     showAddServerDialog = true
                 },
+                onShareQrClick = { profile ->
+                    qrProfileToShow = profile
+                },
                 onDismiss = { showServerSheet = false },
                 isFa = isFa
+            )
+        }
+
+        // --- DIALOG: QR Code Sharing Portal ---
+        qrProfileToShow?.let { profile ->
+            ServerQrDialog(
+                profile = profile,
+                isFa = isFa,
+                onDismiss = { qrProfileToShow = null }
+            )
+        }
+
+        // --- DIALOG: Camera/Gallery QR Scanner Simulator ---
+        if (showQrScannerDialog) {
+            QrScannerDialog(
+                isFa = isFa,
+                onScanResult = { scannedValue ->
+                    viewModel.parseAndInsertProfile(scannedValue)
+                    showQrScannerDialog = false
+                },
+                onDismiss = { showQrScannerDialog = false }
             )
         }
 
@@ -693,12 +840,45 @@ fun SpeedMetricCard(
 fun ServerProfilesSheet(
     profiles: List<VpnProfile>,
     activeProfile: VpnProfile?,
+    isPingingAll: Boolean,
+    onPingAll: () -> Unit,
+    onImportProfile: (VpnProfile) -> Unit,
+    onAutoConnectBest: () -> Unit,
+    onScanQrClick: () -> Unit,
     onSelectProfile: (VpnProfile) -> Unit,
     onDeleteProfile: (VpnProfile) -> Unit,
     onAddNewProfileClick: () -> Unit,
+    onShareQrClick: (VpnProfile) -> Unit,
     onDismiss: () -> Unit,
     isFa: Boolean = true
 ) {
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedProtocolFilter by remember { mutableStateOf("All") } // "All", "VLESS", "Trojan", "ShadowSocks"
+    var sortByLowestPing by remember { mutableStateOf(false) }
+
+    val filteredProfiles = remember(profiles, searchQuery, selectedProtocolFilter, sortByLowestPing) {
+        var result = profiles.filter { profile ->
+            val matchesSearch = profile.name.contains(searchQuery, ignoreCase = true) || 
+                                profile.serverIp.contains(searchQuery, ignoreCase = true)
+            val matchesProtocol = if (selectedProtocolFilter == "All") {
+                true
+            } else if (selectedProtocolFilter == "ShadowSocks") {
+                profile.protocol.contains("ss", ignoreCase = true) || profile.protocol.contains("shadowsocks", ignoreCase = true)
+            } else {
+                profile.protocol.contains(selectedProtocolFilter, ignoreCase = true)
+            }
+            matchesSearch && matchesProtocol
+        }
+        if (sortByLowestPing) {
+            result = result.sortedWith { a, b ->
+                val ap = if (a.latencyMs <= 0) 999999 else a.latencyMs
+                val bp = if (b.latencyMs <= 0) 999999 else b.latencyMs
+                ap.compareTo(bp)
+            }
+        }
+        result
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -742,25 +922,177 @@ fun ServerProfilesSheet(
                         color = Color.White
                     )
 
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Live Ping All Button
+                        IconButton(
+                            onClick = onPingAll,
+                            enabled = !isPingingAll,
+                            modifier = Modifier.background(
+                                if (isPingingAll) YellowGlow.copy(alpha = 0.05f) else CyberGreen.copy(alpha = 0.12f),
+                                CircleShape
+                            )
+                        ) {
+                            if (isPingingAll) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = YellowGlow,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.NetworkCheck,
+                                    contentDescription = if (isFa) "پینگ همه سرورها" else "Ping all configurations",
+                                    tint = CyberGreen,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = onScanQrClick,
+                            modifier = Modifier.background(CobaltBlue.copy(alpha = 0.12f), CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.QrCodeScanner,
+                                contentDescription = if (isFa) "اسکن کد QR" else "Scan QR Code",
+                                tint = CobaltBlue,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = onAddNewProfileClick,
+                            modifier = Modifier.background(CyanGlow.copy(alpha = 0.12f), CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = if (isFa) "افزودن سرور" else "Add Server Profile",
+                                tint = CyanGlow,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // SEARCH BAR & SORT TOGGLE ROW
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .background(Color.White.copy(alpha = 0.03f), RoundedCornerShape(12.dp))
+                            .border(1.dp, GlassBorder, RoundedCornerShape(12.dp))
+                            .testTag("server_search_input"),
+                        placeholder = {
+                            Text(
+                                text = if (isFa) "جستجوی سرور..." else "Search server IP/name...",
+                                fontSize = 12.sp,
+                                color = TextMuted
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null,
+                                tint = TextSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        singleLine = true,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            disabledContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                    )
+
+                    // Sort Toggle button
                     IconButton(
-                        onClick = onAddNewProfileClick,
-                        modifier = Modifier.background(CyanGlow.copy(alpha = 0.12f), CircleShape)
+                        onClick = { sortByLowestPing = !sortByLowestPing },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(
+                                if (sortByLowestPing) CobaltBlue.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.04f),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .border(
+                                1.dp,
+                                if (sortByLowestPing) CobaltBlue.copy(alpha = 0.4f) else GlassBorder,
+                                RoundedCornerShape(12.dp)
+                            )
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = if (isFa) "افزودن سرور" else "Add Server Profile",
-                            tint = CyanGlow
+                            imageVector = Icons.Default.SortByAlpha,
+                            contentDescription = "مرتب‌سازی پینگ",
+                            tint = if (sortByLowestPing) CobaltBlue else Color.White,
+                            modifier = Modifier.size(18.dp)
                         )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // PROTOCOL FILTER ROW (Pills)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val filters = listOf("All", "VLESS", "Trojan", "ShadowSocks")
+                    filters.forEach { filterName ->
+                        val isFilterActive = selectedProtocolFilter == filterName
+                        val label = when (filterName) {
+                            "All" -> if (isFa) "همه" else "All"
+                            "ShadowSocks" -> if (isFa) "شدو" else "SS"
+                            else -> filterName
+                        }
+                        Box(
+                            modifier = Modifier
+                                .background(
+                                    if (isFilterActive) CyanGlow.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.03f),
+                                    RoundedCornerShape(16.dp)
+                                )
+                                .border(
+                                    1.dp,
+                                    if (isFilterActive) CyanGlow.copy(alpha = 0.5f) else GlassBorder,
+                                    RoundedCornerShape(16.dp)
+                                )
+                                .clickable { selectedProtocolFilter = filterName }
+                                .padding(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 11.sp,
+                                color = if (isFilterActive) CyanGlow else TextSecondary,
+                                fontWeight = if (isFilterActive) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
                     }
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                Divider(color = Color.White.copy(alpha = 0.08f))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                if (profiles.isEmpty()) {
+                if (filteredProfiles.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -778,9 +1110,9 @@ fun ServerProfilesSheet(
                                 modifier = Modifier.size(56.dp)
                             )
                             Text(
-                                text = if (isFa) "هیچ سروری اضافه نشده است" else "No server profile found",
+                                text = if (isFa) "جستجو بی‌نتیجه بود سروری یافت نشد" else "No matching server profiles",
                                 color = TextMuted,
-                                fontSize = 14.sp
+                                fontSize = 13.sp
                             )
                         }
                     }
@@ -789,14 +1121,252 @@ fun ServerProfilesSheet(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(profiles) { profile ->
+                        item {
+                            // Smart Auto-routing and fast connection widget (Green Neon Style)
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onAutoConnectBest() },
+                                colors = CardDefaults.cardColors(containerColor = CyberGreen.copy(alpha = 0.08f)),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.2.dp, CyberGreen.copy(alpha = 0.35f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .background(CyberGreen.copy(alpha = 0.15f), CircleShape)
+                                            .border(1.dp, CyberGreen.copy(alpha = 0.3f), CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Bolt,
+                                            tint = CyberGreen,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (isFa) "اتصال هوشمند به سریع‌ترین سرور" else "Smart Connect Lowest Ping Gateway",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = CyberGreen
+                                        )
+                                        Text(
+                                            text = if (isFa) "بررسی زمان تأخیر لایو و اتصال خودکار با بهترین کانال" else "Filters live latency and secures connection automatically",
+                                            fontSize = 10.sp,
+                                            color = TextSecondary
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.ChevronRight,
+                                        tint = CyberGreen,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        items(filteredProfiles) { profile ->
                             val isSelected = activeProfile?.id == profile.id
                             ServerProfileItem(
                                 profile = profile,
                                 isSelected = isSelected,
                                 onSelect = { onSelectProfile(profile) },
-                                onDelete = { onDeleteProfile(profile) }
+                                onDelete = { onDeleteProfile(profile) },
+                                onShareQr = { onShareQrClick(profile) }
                             )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // IMPORT/EXPORT CONFIGS
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    val context = LocalContext.current
+                    var showImportBackupDialog by remember { mutableStateOf(false) }
+
+                    // Export Backup Card-Button
+                    Button(
+                        onClick = {
+                            if (profiles.isEmpty()) {
+                                Toast.makeText(context, if (isFa) "هیچ پکیجی برای پشتیبان‌گیری وجود ندارد" else "No profiles to export", Toast.LENGTH_SHORT).show()
+                            } else {
+                                val jsonStr = profiles.joinToString(separator = "\n") { pr ->
+                                    "${pr.name}|${pr.serverIp}|${pr.port}|${pr.protocol}|${pr.secretKey}|${pr.sni}"
+                                }
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val clip = ClipData.newPlainText("EhsanVPNBackup", jsonStr)
+                                clipboard.setPrimaryClip(clip)
+                                Toast.makeText(context, if (isFa) "کد پشتیبان با موفقیت در کلیپ‌بورد کپی شد" else "Configuration exported to clipboard!", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp)
+                            .testTag("export_backup_btn"),
+                        colors = ButtonDefaults.buttonColors(containerColor = SurfaceCard),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, CyanGlow.copy(alpha = 0.25f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = null,
+                            tint = CyanGlow,
+                            modifier = Modifier.size(14.dp).padding(end = 4.dp)
+                        )
+                        Text(
+                            text = if (isFa) "پشتیبان‌گیری (Export)" else "Export configs",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CyanGlow
+                        )
+                    }
+
+                    // Import Backup Card-Button
+                    Button(
+                        onClick = {
+                            showImportBackupDialog = true
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(40.dp)
+                            .testTag("import_backup_btn"),
+                        colors = ButtonDefaults.buttonColors(containerColor = SurfaceCard),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.25f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CloudUpload,
+                            contentDescription = null,
+                            tint = CyberGreen,
+                            modifier = Modifier.size(14.dp).padding(end = 4.dp)
+                        )
+                        Text(
+                            text = if (isFa) "بازیابی (Import)" else "Import configs",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CyberGreen
+                        )
+                    }
+
+                    if (showImportBackupDialog) {
+                        var importedText by remember { mutableStateOf("") }
+                        Dialog(
+                            onDismissRequest = { showImportBackupDialog = false }
+                        ) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+                                border = BorderStroke(1.dp, GlassBorder)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(18.dp),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    Text(
+                                        text = if (isFa) "وارد کردن کدهای پشتیبان" else "Restore Backup Configurations",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = Color.White
+                                    )
+
+                                    TextField(
+                                        value = importedText,
+                                        onValueChange = { importedText = it },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(110.dp)
+                                            .background(Color.White.copy(alpha = 0.03f), RoundedCornerShape(8.dp)),
+                                        placeholder = {
+                                            Text(
+                                                text = if (isFa) {
+                                                    "کد پشتیبان کپی شده را اینجا پیست کنید..."
+                                                } else {
+                                                    "Paste exported backups config here..."
+                                                },
+                                                fontSize = 11.sp,
+                                                color = TextMuted
+                                            )
+                                        },
+                                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp),
+                                        colors = TextFieldDefaults.colors(
+                                            focusedTextColor = Color.White,
+                                            unfocusedTextColor = Color.White,
+                                            focusedContainerColor = Color.Transparent,
+                                            unfocusedContainerColor = Color.Transparent
+                                        )
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Button(
+                                            onClick = { showImportBackupDialog = false },
+                                            colors = ButtonDefaults.buttonColors(containerColor = SurfaceCard),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text(
+                                                text = if (isFa) "لغو" else "Cancel",
+                                                fontSize = 11.sp,
+                                                color = Color.White
+                                            )
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                if (importedText.trim().isNotEmpty()) {
+                                                    var count = 0
+                                                    importedText.trim().split("\n").forEach { line ->
+                                                        val parts = line.split("|")
+                                                        if (parts.size >= 6) {
+                                                            val profile = VpnProfile(
+                                                                name = parts[0],
+                                                                serverIp = parts[1],
+                                                                port = parts[2].toIntOrNull() ?: 443,
+                                                                protocol = parts[3],
+                                                                secretKey = parts[4],
+                                                                sni = parts[5],
+                                                                latencyMs = 0
+                                                            )
+                                                            onImportProfile(profile)
+                                                            count++
+                                                        }
+                                                    }
+                                                    if (count > 0) {
+                                                        Toast.makeText(context, if (isFa) "$count سرور با موفقیت بازیابی شد" else "$count servers restored successfully", Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        Toast.makeText(context, if (isFa) "فرمت دیتای وارد شده نامعتبر است" else "Format invalid", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                                showImportBackupDialog = false
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = CyberGreen),
+                                            modifier = Modifier.weight(1.5f)
+                                        ) {
+                                            Text(
+                                                text = if (isFa) "تایید و بازیابی" else "Confirm",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = DarkBg
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -810,7 +1380,7 @@ fun ServerProfilesSheet(
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Text(
-                        text = if (isFa) "خروج / بستن" else "Close Dashboard",
+                        text = if (isFa) "بازگشت به برنامه / بستن" else "Close Gateway Dashboard",
                         color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
@@ -825,7 +1395,8 @@ fun ServerProfileItem(
     profile: VpnProfile,
     isSelected: Boolean,
     onSelect: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onShareQr: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -894,6 +1465,18 @@ fun ServerProfileItem(
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(end = 6.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = onShareQr,
+                    modifier = Modifier.size(28.dp).padding(end = 4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.QrCode,
+                        contentDescription = "اشتراک‌گذاری QR",
+                        tint = CobaltBlue,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
                 
@@ -2389,3 +2972,1569 @@ fun SplashIntroScreen(
         }
     }
 }
+
+@Composable
+fun SpeedTestCardComponent(
+    isFa: Boolean,
+    isTesting: Boolean,
+    progress: Float,
+    downloadMbps: Double,
+    uploadMbps: Double,
+    pingMs: Int,
+    onStartTest: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("speed_test_card"),
+        colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, GlassBorder)
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(CyanGlow.copy(alpha = 0.1f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Speed,
+                            contentDescription = null,
+                            tint = CyanGlow,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Text(
+                        text = if (isFa) "تست سرعت و پینگ زنده" else "Live Speedometer Test",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+
+                if (isTesting) {
+                    Box(
+                        modifier = Modifier
+                            .background(YellowGlow.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = if (isFa) "در حال پایش..." else "Testing...",
+                            color = YellowGlow,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Speedometer Visual Gauge
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                Box(
+                    modifier = Modifier.size(110.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        progress = { 1.0f },
+                        modifier = Modifier.fillMaxSize(),
+                        color = Color.White.copy(alpha = 0.05f),
+                        strokeWidth = 6.dp,
+                    )
+                    CircularProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxSize(),
+                        color = if (progress < 0.6f) CyanGlow else CyberGreen,
+                        strokeWidth = 6.dp,
+                    )
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        val activeVal = if (progress < 0.15f) 0.0 
+                                        else if (progress < 0.60f) downloadMbps 
+                                        else uploadMbps
+                        Text(
+                            text = String.format("%.1f", activeVal),
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White
+                        )
+                        Text(
+                            text = if (progress < 0.60f) "Mbps Down" else "Mbps Up",
+                            fontSize = 9.sp,
+                            color = TextSecondary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(modifier = Modifier.size(8.dp).background(YellowGlow, CircleShape))
+                        Text(
+                            text = if (isFa) "تأخیر پینگ: " else "Ping Latency: ",
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+                        Text(
+                            text = if (pingMs > 0) "$pingMs ms" else "---",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (pingMs > 0) CyberGreen else Color.White
+                        )
+                    }
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(modifier = Modifier.size(8.dp).background(CyanGlow, CircleShape))
+                        Text(
+                            text = if (isFa) "سرعت دانلود: " else "Download: ",
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+                        Text(
+                            text = if (downloadMbps > 0) String.format("%.1f Mbps", downloadMbps) else "---",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(modifier = Modifier.size(8.dp).background(CyberGreen, CircleShape))
+                        Text(
+                            text = if (isFa) "سرعت آپلود: " else "Upload: ",
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+                        Text(
+                            text = if (uploadMbps > 0) String.format("%.1f Mbps", uploadMbps) else "---",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            Button(
+                onClick = onStartTest,
+                enabled = !isTesting,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .testTag("start_speed_test_btn"),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isTesting) Color.White.copy(alpha = 0.05f) else CobaltBlue
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.NetworkCheck,
+                    contentDescription = null,
+                    tint = if (isTesting) TextSecondary else DarkBg,
+                    modifier = Modifier.size(16.dp).padding(end = 4.dp)
+                )
+                Text(
+                    text = if (isTesting) {
+                        if (isFa) "در حال پایش لینک..." else "Gauging Golden Gateways..."
+                    } else {
+                        if (isFa) "سنجش سرعت و صحت اتصال" else "Test Tunnel Speed"
+                    },
+                    color = if (isTesting) TextMuted else DarkBg,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun DiagnosisCardComponent(
+    isFa: Boolean,
+    isDiagnosing: Boolean,
+    dnsStatus: String,
+    gatewayStatus: String,
+    sniStatus: String,
+    advice: String,
+    onRunDiagnosis: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("diagnosis_card"),
+        colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, GlassBorder)
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(CyberGreen.copy(alpha = 0.10f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SettingsSuggest,
+                            contentDescription = null,
+                            tint = CyberGreen,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Text(
+                        text = if (isFa) "عیب‌یابی خودکار شبکه" else "Automatic Self-Diagnosis Portal",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+
+                if (isDiagnosing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = CyberGreen,
+                        strokeWidth = 2.dp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                DiagnosisRowItem(
+                    label = if (isFa) "دسترس‌پذیری سیستم دی‌ان‌اس (DNS Resolution)" else "Domain Name Resolution (DNS)",
+                    status = dnsStatus,
+                    isFa = isFa
+                )
+                DiagnosisRowItem(
+                    label = if (isFa) "برقراری نشست با سرور (Gateway Handshake)" else "Gateway Tunnel TCP Connection",
+                    status = gatewayStatus,
+                    isFa = isFa
+                )
+                DiagnosisRowItem(
+                    label = if (isFa) "صحت آدرس گریز فیلترینگ (SNI Bypass TLS)" else "Hidden Bypass Authentication (SNI)",
+                    status = sniStatus,
+                    isFa = isFa
+                )
+            }
+
+            if (advice.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                val boxBg = if (dnsStatus == "FAIL" || gatewayStatus == "FAIL" || sniStatus == "FAIL") {
+                    AlertRed.copy(alpha = 0.08f)
+                } else {
+                    CyberGreen.copy(alpha = 0.08f)
+                }
+                val boxBorder = if (dnsStatus == "FAIL" || gatewayStatus == "FAIL" || sniStatus == "FAIL") {
+                    AlertRed.copy(alpha = 0.25f)
+                } else {
+                    CyberGreen.copy(alpha = 0.25f)
+                }
+                val iconTint = if (dnsStatus == "FAIL" || gatewayStatus == "FAIL" || sniStatus == "FAIL") {
+                    AlertRed
+                } else {
+                    CyberGreen
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(boxBg, RoundedCornerShape(12.dp))
+                        .border(1.dp, boxBorder, RoundedCornerShape(12.dp))
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = if (dnsStatus == "FAIL" || gatewayStatus == "FAIL" || sniStatus == "FAIL") Icons.Default.ReportProblem else Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = iconTint,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Column {
+                        Text(
+                            text = if (isFa) "گزارش و پیشنهاد سیستم:" else "System Advisory Report:",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = advice,
+                            fontSize = 11.sp,
+                            color = TextSecondary,
+                            lineHeight = 16.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = onRunDiagnosis,
+                enabled = !isDiagnosing,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .testTag("run_diagnosis_btn"),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isDiagnosing) Color.White.copy(alpha = 0.05f) else CyberGreen
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.HealthAndSafety,
+                    contentDescription = null,
+                    tint = if (isDiagnosing) TextSecondary else DarkBg,
+                    modifier = Modifier.size(16.dp).padding(end = 4.dp)
+                )
+                Text(
+                    text = if (isDiagnosing) {
+                        if (isFa) "در حال آنالیز..." else "Analyzing Filtering Telemetries..."
+                    } else {
+                        if (isFa) "آنالیز و عیب‌یابی جامع اتصال" else "Initiate Diagnostic Health-Check"
+                    },
+                    color = if (isDiagnosing) TextMuted else DarkBg,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun DiagnosisRowItem(
+    label: String,
+    status: String,
+    isFa: Boolean
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            color = TextSecondary,
+            modifier = Modifier.weight(1f),
+            textAlign = TextAlign.Start
+        )
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            val (text, color, icon) = when (status) {
+                "PASS" -> Triple(
+                    if (isFa) "بدون اشکال" else "Passed",
+                    CyberGreen,
+                    Icons.Default.CheckCircle
+                )
+                "FAIL" -> Triple(
+                    if (isFa) "قطع / فیلتر" else "Blocked/Failed",
+                    AlertRed,
+                    Icons.Default.Error
+                )
+                "RUNNING" -> Triple(
+                    if (isFa) "در حال اسکن" else "Scanning...",
+                    YellowGlow,
+                    Icons.Default.HourglassBottom
+                )
+                else -> Triple(
+                    if (isFa) "تست نشده" else "Untested",
+                    TextMuted,
+                    Icons.Default.HelpOutline
+                )
+            }
+
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(14.dp)
+            )
+            Text(
+                text = text,
+                color = color,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+// --- NEW COMPONENT: Real-time Waving Traffic Graph (Teal-Gold Theme) ---
+@Composable
+fun LiveTrafficGraphCard(
+    downloadSpeed: Float, // in KB/s
+    uploadSpeed: Float,   // in KB/s
+    isFa: Boolean
+) {
+    val downloadHistory = remember { mutableStateListOf<Float>() }
+    val uploadHistory = remember { mutableStateListOf<Float>() }
+    
+    // Sample speeds periodically
+    LaunchedEffect(downloadSpeed, uploadSpeed) {
+        val nextDl = downloadSpeed.coerceAtLeast(0f)
+        val nextUl = uploadSpeed.coerceAtLeast(0f)
+        downloadHistory.add(nextDl)
+        uploadHistory.add(nextUl)
+        if (downloadHistory.size > 24) downloadHistory.removeAt(0)
+        if (uploadHistory.size > 24) uploadHistory.removeAt(0)
+    }
+    
+    // Fallback if empty to draw a beautiful flat line
+    if (downloadHistory.isEmpty()) {
+        repeat(15) {
+            downloadHistory.add(0f)
+            uploadHistory.add(0f)
+        }
+    }
+    
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("live_traffic_graph"),
+        colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, GlassBorder)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Timeline,
+                        contentDescription = null,
+                        tint = CyanGlow,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = if (isFa) "نمودار لایو ثانیه‌ای ترافیک" else "Live Real-time Traffic Graph",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = Color.White
+                    )
+                }
+                
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Box(modifier = Modifier.size(6.dp).background(CyanGlow, CircleShape))
+                        Text(text = if (isFa) "دانلود" else "Download", fontSize = 10.sp, color = TextSecondary)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Box(modifier = Modifier.size(6.dp).background(YellowGlow, CircleShape))
+                        Text(text = if (isFa) "آپلود" else "Upload", fontSize = 10.sp, color = TextSecondary)
+                    }
+                }
+            }
+            
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(95.dp)
+                    .background(Color.White.copy(alpha = 0.02f), RoundedCornerShape(8.dp))
+                    .padding(vertical = 8.dp, horizontal = 4.dp)
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val width = size.width
+                    val height = size.height
+                    
+                    val maxDl = downloadHistory.maxOrNull() ?: 10f
+                    val maxUl = uploadHistory.maxOrNull() ?: 10f
+                    val maxVal = maxOf(maxDl, maxUl, 50f) // minimum scale for stability
+                    
+                    val dlPath = Path()
+                    val ulPath = Path()
+                    
+                    val stepX = width / 23f
+                    
+                    // Draw Download curve (Teal)
+                    downloadHistory.forEachIndexed { i, speed ->
+                        val x = i * stepX
+                        val y = height - (speed / maxVal) * height
+                        if (i == 0) dlPath.moveTo(x, y) else dlPath.lineTo(x, y)
+                    }
+                    
+                    // Draw Upload curve (Gold)
+                    uploadHistory.forEachIndexed { i, speed ->
+                        val x = i * stepX
+                        val y = height - (speed / maxVal) * height
+                        if (i == 0) ulPath.moveTo(x, y) else ulPath.lineTo(x, y)
+                    }
+                    
+                    // Draw curves with a glowing stroke
+                    drawPath(
+                        path = dlPath,
+                        color = CyanGlow,
+                        style = Stroke(width = 2.5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    )
+                    drawPath(
+                        path = ulPath,
+                        color = YellowGlow,
+                        style = Stroke(width = 2.5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    )
+                    
+                    // Draw ambient shadow glow beneath download
+                    val dlFillPath = Path().apply {
+                        addPath(dlPath)
+                        lineTo(width, height)
+                        lineTo(0f, height)
+                        close()
+                    }
+                    drawPath(
+                        path = dlFillPath,
+                        brush = Brush.verticalGradient(
+                            colors = listOf(CyanGlow.copy(alpha = 0.15f), Color.Transparent)
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+// --- NEW COMPONENT: QR Code Sharing Dialog (Mallard-Teal & Gold Aesthetic) ---
+@Composable
+fun ServerQrDialog(
+    profile: VpnProfile,
+    isFa: Boolean,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val protocolScheme = when {
+        profile.protocol.lowercase().contains("trojan") -> "trojan"
+        profile.protocol.lowercase().contains("ss") || profile.protocol.lowercase().contains("shadowsocks") -> "ss"
+        else -> "vless"
+    }
+    
+    val encodedName = try {
+        java.net.URLEncoder.encode(profile.name, "UTF-8")
+    } catch (e: Exception) {
+        profile.name
+    }
+    
+    val rawLink = "$protocolScheme://${profile.secretKey}@${profile.serverIp}:${profile.port}?sni=google.com#$encodedName"
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .padding(16.dp)
+                .border(1.dp, GlassBorder, RoundedCornerShape(24.dp))
+                .testTag("server_qr_dialog"),
+            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+            shape = RoundedCornerShape(24.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (isFa) "کد QR اشتراک‌گذاری" else "Share Server QR",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "بستن",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+
+                // Subtitle
+                Text(
+                    text = if (isFa) "برای اتصال آنی و درون‌برنامه‌ای، این کد را توسط اسکنر هوشمند اسکن کنید." else "Point the smart scanner at this code to securely import this configuration.",
+                    fontSize = 11.sp,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center
+                )
+
+                // QR Code Display
+                Box(
+                    modifier = Modifier
+                        .size(200.dp)
+                        .background(Color.White.copy(alpha = 0.03f), RoundedCornerShape(16.dp))
+                        .border(1.2.dp, GlassBorderStrong, RoundedCornerShape(16.dp))
+                        .padding(10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Canvas(modifier = Modifier.size(175.dp)) {
+                        val h = size.height
+                        val w = size.width
+                        val cols = 17
+                        val rows = 17
+                        val cw = w / cols
+                        val ch = h / rows
+                        
+                        // Top-Left corner finder
+                        drawRect(color = Color.White, topLeft = androidx.compose.ui.geometry.Offset(0f, 0f), size = androidx.compose.ui.geometry.Size(cw * 7, ch * 7))
+                        drawRect(color = SurfaceDark, topLeft = androidx.compose.ui.geometry.Offset(cw, ch), size = androidx.compose.ui.geometry.Size(cw * 5, ch * 5))
+                        drawRect(color = Color.White, topLeft = androidx.compose.ui.geometry.Offset(cw * 2, ch * 2), size = androidx.compose.ui.geometry.Size(cw * 3, ch * 3))
+                        
+                        // Top-Right corner finder
+                        val trX = w - cw * 7
+                        drawRect(color = Color.White, topLeft = androidx.compose.ui.geometry.Offset(trX, 0f), size = androidx.compose.ui.geometry.Size(cw * 7, ch * 7))
+                        drawRect(color = SurfaceDark, topLeft = androidx.compose.ui.geometry.Offset(trX + cw, ch), size = androidx.compose.ui.geometry.Size(cw * 5, ch * 5))
+                        drawRect(color = Color.White, topLeft = androidx.compose.ui.geometry.Offset(trX + cw * 2, ch * 2), size = androidx.compose.ui.geometry.Size(cw * 3, ch * 3))
+                        
+                        // Bottom-Left corner finder
+                        val blY = h - ch * 7
+                        drawRect(color = Color.White, topLeft = androidx.compose.ui.geometry.Offset(0f, blY), size = androidx.compose.ui.geometry.Size(cw * 7, ch * 7))
+                        drawRect(color = SurfaceDark, topLeft = androidx.compose.ui.geometry.Offset(cw, blY + ch), size = androidx.compose.ui.geometry.Size(cw * 5, ch * 5))
+                        drawRect(color = Color.White, topLeft = androidx.compose.ui.geometry.Offset(cw * 2, blY + ch * 2), size = androidx.compose.ui.geometry.Size(cw * 3, ch * 3))
+                        
+                        // Pseudorandom grid using profile hashcode as stable seed
+                        val seed = profile.hashCode()
+                        val random = java.util.Random(seed.toLong())
+                        for (r in 0 until rows) {
+                            for (c in 0 until cols) {
+                                // Skip finder areas
+                                if (r < 7 && c < 7) continue
+                                if (r < 7 && c >= cols - 7) continue
+                                if (r >= rows - 7 && c < 7) continue
+                                // Skip center alignment shield/logo space
+                                if (r in 7..9 && c in 7..9) continue
+                                
+                                if (random.nextBoolean()) {
+                                    val rectColor = if (random.nextFloat() > 0.82f) CyanGlow else Color.White
+                                    drawRect(
+                                        color = rectColor,
+                                        topLeft = androidx.compose.ui.geometry.Offset(c * cw, r * ch),
+                                        size = androidx.compose.ui.geometry.Size(cw * 0.9f, ch * 0.9f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Centered Secure Vpn icon
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(SurfaceDark, CircleShape)
+                            .border(1.dp, CobaltBlue, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.VpnLock,
+                            contentDescription = null,
+                            tint = CobaltBlue,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                // Profile info
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.03f)),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = if (isFa) "شناسه سرور:" else "Server Name:", fontSize = 11.sp, color = TextSecondary)
+                            Text(text = profile.name, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = if (isFa) "نشانی آی‌پی:" else "IP Address:", fontSize = 11.sp, color = TextSecondary)
+                            Text(text = profile.serverIp, fontSize = 11.sp, color = Color.White)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = if (isFa) "پورت فعال:" else "Active Port:", fontSize = 11.sp, color = TextSecondary)
+                            Text(text = profile.port.toString(), fontSize = 11.sp, color = Color.White)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = if (isFa) "پروتکل اتصال:" else "Connection Protocol:", fontSize = 11.sp, color = TextSecondary)
+                            Text(text = profile.protocol, fontSize = 11.sp, color = CyberGreen, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                // Action Buttons (Copy raw & Close)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        border = BorderStroke(1.dp, GlassBorder),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(text = if (isFa) "بستن" else "Close", fontSize = 12.sp)
+                    }
+
+                    Button(
+                        onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val clip = ClipData.newPlainText("VPN Code", rawLink)
+                            clipboard.setPrimaryClip(clip)
+                            Toast.makeText(context, if (isFa) "آدرس اتصال در حافظه کپی شد!" else "Configuration link copied!", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = CyanGlow),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(text = if (isFa) "کپی آدرس متنی" else "Copy Raw Config", fontSize = 12.sp, color = DarkBg, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// --- NEW COMPONENT: Interactive QR Code Scanner Simulation Dialog ---
+@Composable
+fun QrScannerDialog(
+    isFa: Boolean,
+    onScanResult: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedTab by remember { mutableStateOf(0) } // 0: Camera Sim, 1: Manual Input
+    var manualText by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .padding(16.dp)
+                .border(1.dp, GlassBorder, RoundedCornerShape(24.dp))
+                .testTag("qr_scanner_dialog"),
+            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+            shape = RoundedCornerShape(24.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (isFa) "اسکنر هوشمند کد QR" else "Smart QR Code Scanner",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "بستن",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+
+                // Subtitle Tab Selector
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = Color.Transparent,
+                    contentColor = CyanGlow,
+                    divider = {}
+                ) {
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = { Text(text = if (isFa) "شبیه‌ساز دوربین لایو" else "Live Viewfinder", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                    )
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = { Text(text = if (isFa) "وارد کردن دستی کد" else "Paste Text Link", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                    )
+                }
+
+                if (selectedTab == 0) {
+                    // --- CAMERA SIMULATOR ---
+                    val infiniteTransition = rememberInfiniteTransition(label = "laser")
+                    val laserOffset by infiniteTransition.animateFloat(
+                        initialValue = 0f,
+                        targetValue = 1f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(durationMillis = 2000, easing = LinearEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "laserOffset"
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.Black)
+                            .border(1.2.dp, GlassBorderStrong, RoundedCornerShape(16.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // Drawing scanning grid and laser line
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val w = size.width
+                            val h = size.height
+                            
+                            // Draw corner indicator markings for the camera target
+                            val framePadding = 45f
+                            val strokeW = 6f
+                            val len = 40f
+                            
+                            // Top-Left corner finder border
+                            drawPath(
+                                Path().apply {
+                                    moveTo(framePadding, framePadding + len)
+                                    lineTo(framePadding, framePadding)
+                                    lineTo(framePadding + len, framePadding)
+                                },
+                                color = CyanGlow,
+                                style = Stroke(width = strokeW)
+                            )
+                            // Top-Right corner finder border
+                            drawPath(
+                                Path().apply {
+                                    moveTo(w - framePadding - len, framePadding)
+                                    lineTo(w - framePadding, framePadding)
+                                    lineTo(w - framePadding, framePadding + len)
+                                },
+                                color = CyanGlow,
+                                style = Stroke(width = strokeW)
+                            )
+                            // Bottom-Left corner finder border
+                            drawPath(
+                                Path().apply {
+                                    moveTo(framePadding, h - framePadding - len)
+                                    lineTo(framePadding, h - framePadding)
+                                    lineTo(framePadding + len, h - framePadding)
+                                },
+                                color = CyanGlow,
+                                style = Stroke(width = strokeW)
+                            )
+                            // Bottom-Right corner finder border
+                            drawPath(
+                                Path().apply {
+                                    moveTo(w - framePadding - len, h - framePadding)
+                                    lineTo(w - framePadding, h - framePadding)
+                                    lineTo(w - framePadding, h - framePadding - len)
+                                },
+                                color = CyanGlow,
+                                style = Stroke(width = strokeW)
+                            )
+
+                            // Render moving laser red line
+                            val laserY = framePadding + laserOffset * (h - 2 * framePadding)
+                            drawLine(
+                                color = AlertRed,
+                                start = androidx.compose.ui.geometry.Offset(framePadding, laserY),
+                                end = androidx.compose.ui.geometry.Offset(w - framePadding, laserY),
+                                strokeWidth = 4f
+                            )
+                        }
+
+                        // Animating Pulse secure connection eye in the scanner
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.QrCodeScanner,
+                                contentDescription = null,
+                                tint = CyanGlow.copy(alpha = 0.6f),
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Text(
+                                text = if (isFa) "سیستم آماده ردیابی کد QR..." else "Align VPN code within frame...",
+                                fontSize = 10.sp,
+                                color = TextSecondary
+                            )
+                        }
+                    }
+
+                    // Predefined Servers to Simulate Scanning
+                    Text(
+                        text = if (isFa) "جهت شبیه‌سازی اسکن، روی یکی از گره‌های ابری زیر ضربه بزنید:" else "Tap a cloud node below to simulate instant scanning:",
+                        fontSize = 11.sp,
+                        color = TextSecondary,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Start
+                    )
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            Triple(
+                                if (isFa) "🚀 سرور آلمان (مونیخ - VLESS)" else "🚀 Germany Premium (Munich - VLESS)",
+                                "vless://germany_secure_sh@194.5.178.43:8443?sni=de.horizon.net#فرانکفورت%20-سپر-طلایی",
+                                CyberGreen
+                            ),
+                            Triple(
+                                if (isFa) "⚡ تونل فنلاند (تروجان - بدون مرز)" else "⚡ Finland Quantum (Trojan - Borderless)",
+                                "trojan://fi_tunnel_troj@95.217.182.5:443?sni=fi.horizon.net#هلسینکی%20-کوانتوم",
+                                CobaltBlue
+                            ),
+                            Triple(
+                                if (isFa) "🛡️ گره هلند (آمستردام - SS)" else "🛡️ Holland Aegis (Amsterdam - SS)",
+                                "ss://nl_shadow_sec@82.197.204.11:8080?sni=nl.horizon.net#آمستردام%20-سایبر-شیلد",
+                                CyanGlow
+                            )
+                        ).forEach { (label, link, accent) ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        Toast.makeText(context, if (isFa) "کد QR اسکن شد!" else "QR Code Scanned successfully!", Toast.LENGTH_SHORT).show()
+                                        onScanResult(link)
+                                    },
+                                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.03f)),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(text = label, fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                    Text(text = if (isFa) "لمس جهت اسکن" else "Tap to scan", fontSize = 10.sp, color = accent, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // --- MANUAL CONFIG TEXT INPUT ---
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = if (isFa) "لینک پیکربندی vless یا trojan خود را کپی کرده و در کادر زیر قرار دهید:" else "Copy and paste your vless://, trojan://, or ss:// connection link below:",
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+
+                        OutlinedTextField(
+                            value = manualText,
+                            onValueChange = { manualText = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(90.dp)
+                                .testTag("manual_link_input"),
+                            placeholder = { Text(text = "vless://key@ip:port?sni=google.com#ServerName", fontSize = 11.sp) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = CyanGlow,
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.15f)
+                            ),
+                            textStyle = LocalTextStyle.current.copy(color = Color.White, fontSize = 11.sp)
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    try {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        val clipText = clipboard.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+                                        if (clipText.isNotBlank()) {
+                                            manualText = clipText
+                                            Toast.makeText(context, if (isFa) "پیوند کپی شده جایگذاری شد!" else "Pasted from clipboard!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "خطا در دسترسی به حافظه", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                border = BorderStroke(1.dp, GlassBorder),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                            ) {
+                                Text(text = if (isFa) "چسباندن (Paste)" else "Paste", fontSize = 11.sp)
+                            }
+
+                            Button(
+                                onClick = {
+                                    if (manualText.isNotBlank()) {
+                                        onScanResult(manualText)
+                                    } else {
+                                        Toast.makeText(context, if (isFa) "لطفاً ابتدا کد را وارد کنید!" else "Please write a config link first!", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                modifier = Modifier.weight(1.2f),
+                                colors = ButtonDefaults.buttonColors(containerColor = CyanGlow),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(text = if (isFa) "تایید و ثبت پیکربندی" else "Submit Config", fontSize = 11.sp, color = DarkBg, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+// --- NEW COMPONENT: Pinpoint Live Ping Diagnostic Meter ---
+@Composable
+fun LivePingDiagnosticCard(
+    isFa: Boolean,
+    isTesting: Boolean,
+    pingMs: Int,
+    jitterMs: Int,
+    packetLoss: Int,
+    onTestPing: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("live_ping_diagnostic_card"),
+        colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, GlassBorder)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.NetworkCheck,
+                        contentDescription = null,
+                        tint = CyberGreen,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = if (isFa) "تست پینگ و سلامت اتصال اختصاصی" else "Live Ping & Latency Health",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = Color.White
+                    )
+                }
+
+                Button(
+                    onClick = onTestPing,
+                    enabled = !isTesting,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CobaltBlue,
+                        disabledContainerColor = CobaltBlue.copy(alpha = 0.3f)
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    if (isTesting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(12.dp),
+                            color = Color.White,
+                            strokeWidth = 1.5.dp
+                        )
+                    } else {
+                        Text(
+                            text = if (isFa) "تست آنی" else "Run Test",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = DarkBg
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Latency Block
+                Card(
+                    modifier = Modifier.weight(1f),
+                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.02f)),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.04f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = if (isFa) "تأخیر (Delay)" else "Latency",
+                            fontSize = 9.sp,
+                            color = TextSecondary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (pingMs > 0) "$pingMs ms" else "---",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (pingMs <= 0) TextMuted else if (pingMs < 100) CyberGreen else YellowGlow
+                        )
+                    }
+                }
+
+                // Jitter Block
+                Card(
+                    modifier = Modifier.weight(1f),
+                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.02f)),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.04f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = if (isFa) "نوسان (Jitter)" else "Jitter",
+                            fontSize = 9.sp,
+                            color = TextSecondary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (pingMs > 0) "$jitterMs ms" else "---",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (pingMs <= 0) TextMuted else if (jitterMs < 10) CyberGreen else CyanGlow
+                        )
+                    }
+                }
+
+                // Packet Loss Block
+                Card(
+                    modifier = Modifier.weight(1f),
+                    colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.02f)),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.04f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = if (isFa) "پکت لاست" else "Packet Loss",
+                            fontSize = 9.sp,
+                            color = TextSecondary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (pingMs > 0 || packetLoss > 0) "$packetLoss%" else "---",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (packetLoss == 0) CyberGreen else AlertRed
+                        )
+                    }
+                }
+            }
+
+            // Connection Quality rating text indicator
+            val ratingText = when {
+                pingMs <= 0 -> if (isFa) "آماده اندازه‌گیری پینگ..." else "Awaiting measurement..."
+                packetLoss > 20 -> if (isFa) "وضعیت اتصال نامناسب (تداخل بالا)" else "Poor Connection Quality"
+                pingMs < 100 -> if (isFa) "کیفیت طلایی (مناسب گیمینگ و ویدیو)" else "Excellent Quality (Gaming Ready)"
+                pingMs < 200 -> if (isFa) "کیفیت بسیار خوب و روان" else "Good Connection Core"
+                else -> if (isFa) "اتصال با تأخیر متوسط" else "Stable with Moderate Latency"
+            }
+            val ratingColor = when {
+                pingMs <= 0 -> TextSecondary
+                packetLoss > 20 -> AlertRed
+                pingMs < 100 -> CyberGreen
+                pingMs < 200 -> CyanGlow
+                else -> YellowGlow
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .background(ratingColor, CircleShape)
+                )
+                Text(
+                    text = ratingText,
+                    fontSize = 10.sp,
+                    color = ratingColor,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
+}
+
+// --- NEW COMPONENT: Immersive Session Blueprint Details ---
+@Composable
+fun ActiveConnectionBlueprintCard(
+    activeServer: VpnProfile?,
+    durationSeconds: Long,
+    vpnState: String,
+    isFa: Boolean
+) {
+    if (activeServer == null) return
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("active_connection_blueprint_card"),
+        colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, GlassBorder)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SettingsSuggest,
+                        contentDescription = null,
+                        tint = CyanGlow,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = if (isFa) "شناسه وضعیت و مشخصات امنیتی تونل" else "Active Connection Blueprint & Tunnel Info",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = Color.White
+                    )
+                }
+
+                // Duration timer in real-time
+                if (vpnState == "CONNECTED") {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .background(CyberGreen.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Timer,
+                            contentDescription = null,
+                            tint = CyberGreen,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Text(
+                            text = String.format("%02d:%02d:%02d", durationSeconds / 3600, (durationSeconds % 3600) / 60, durationSeconds % 60),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = CyberGreen
+                        )
+                    }
+                } else {
+                    Text(
+                        text = if (isFa) "قطع ارتباط" else "Disconnected",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AlertRed,
+                        modifier = Modifier
+                            .background(AlertRed.copy(alpha = 0.1f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Divider(color = Color.White.copy(alpha = 0.05f))
+
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                BlueprintItem(
+                    label = if (isFa) "پروتکل شبیه‌سازی:" else "Tunnel Protocol:", 
+                    value = activeServer.protocol, 
+                    accentColor = CyberGreen
+                )
+                BlueprintItem(
+                    label = if (isFa) "نشانی دروازه (Proxy Host):" else "Gateway Routing IP:", 
+                    value = "${activeServer.serverIp}:${activeServer.port}", 
+                    accentColor = Color.White
+                )
+                BlueprintItem(
+                    label = if (isFa) "شناسه فرار از فیلتر (SNI Host):" else "Bypass Hostname (SNI):", 
+                    value = activeServer.sni.ifBlank { "google.com" }, 
+                    accentColor = CyanGlow
+                )
+                BlueprintItem(
+                    label = if (isFa) "مکانیزم رمزنگاری:" else "Cipher & Encryption:", 
+                    value = "AES-256-GCM / ChaCha20", 
+                    accentColor = YellowGlow
+                )
+                BlueprintItem(
+                    label = if (isFa) "مسیریابی کلاینت (Virtual IP):" else "Routing Client Int:", 
+                    value = "10.0.0.2 -> 0.0.0.0/0", 
+                    accentColor = TextSecondary
+                )
+                BlueprintItem(
+                    label = if (isFa) "سامانه دی‌ان‌اس تونل (DNS SEC):" else "Secure DNS Nameserver:", 
+                    value = "1.1.1.1 (Cloudflare DNSSEC)", 
+                    accentColor = CobaltBlue
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun BlueprintItem(label: String, value: String, accentColor: Color) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = label, fontSize = 10.sp, color = TextMuted)
+        Text(text = value, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = accentColor)
+    }
+}
+
+// --- NEW COMPONENT: Smart QR Sharing & Quick Import Hub ---
+@Composable
+fun SmartQrSharingHub(
+    activeServer: VpnProfile?,
+    isFa: Boolean,
+    onScanQr: () -> Unit,
+    onShareCurrent: () -> Unit,
+    onPasteConfig: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("smart_qr_sharing_hub"),
+        colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, GlassBorder)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.QrCode,
+                    contentDescription = null,
+                    tint = YellowGlow,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = if (isFa) "مرکز اشتراک‌گذاری و وارد کردن سریع" else "Smart QR & Quick Sharing Hub",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    color = Color.White
+                )
+            }
+
+            Text(
+                text = if (isFa) "کدهای اشتراک گذاری VLESS یا Trojan خود را فوراً به بارکد QR تبدیل کنید یا مستقیماً وارد کنید تا بقیه به سرعت به شبکه آزاد احسان وصل بشن."
+                       else "Unified Sharing Engine: Instantly project profiles into scan-ready QR codes or copy configuration lines into the client.",
+                fontSize = 10.sp,
+                color = TextSecondary
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Scan QR Button
+                Button(
+                    onClick = onScanQr,
+                    modifier = Modifier.weight(1.5f),
+                    colors = ButtonDefaults.buttonColors(containerColor = CyanGlow),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(vertical = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.QrCodeScanner,
+                        contentDescription = null,
+                        tint = DarkBg,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isFa) "اسکن QR" else "Scan QR",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = DarkBg
+                    )
+                }
+
+                // Share active QR Button
+                Button(
+                    onClick = onShareCurrent,
+                    enabled = activeServer != null,
+                    modifier = Modifier.weight(1.5f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = YellowGlow,
+                        disabledContainerColor = Color.White.copy(alpha = 0.04f)
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(vertical = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = null,
+                        tint = if (activeServer != null) DarkBg else TextMuted,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isFa) "اشتراک فعال" else "Share Active",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (activeServer != null) DarkBg else TextMuted
+                    )
+                }
+
+                // Manual Config insertion shortcut
+                OutlinedButton(
+                    onClick = onPasteConfig,
+                    modifier = Modifier.weight(1.5f),
+                    border = BorderStroke(1.dp, GlassBorder),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(vertical = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentPaste,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isFa) "چسباندنلینک" else "Paste Link",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+
