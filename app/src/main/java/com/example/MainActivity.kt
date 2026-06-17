@@ -63,6 +63,15 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: VpnViewModel by viewModels()
 
+    // Android 13+ Notification Permission Launcher
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (!isGranted) {
+            Toast.makeText(this, "بدون مجوز اعلان، وضعیت اتصال در نوار اعلان نمایش داده نمی‌شود.", Toast.LENGTH_LONG).show()
+        }
+    }
+
     // Android System VPN Permissions Launcher
     private val vpnPrepareLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -77,6 +86,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        
         enableEdgeToEdge()
         setContent {
             val amoledMode by viewModel.isAmoledMode.collectAsStateWithLifecycle()
