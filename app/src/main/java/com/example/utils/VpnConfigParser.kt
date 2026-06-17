@@ -3,13 +3,21 @@ package com.example.utils
 import android.util.Base64
 import com.example.data.VpnProfile
 import org.json.JSONObject
+import timber.log.Timber
 import java.net.URLDecoder
 
+/**
+ * Parses VPN configuration strings from various protocols.
+ * Supports: VLESS, VMess, Trojan, ShadowSocks
+ */
 object VpnConfigParser {
 
     fun parse(rawLink: String): VpnProfile? {
         val trimmed = rawLink.trim()
-        if (trimmed.isEmpty()) return null
+        if (trimmed.isEmpty()) {
+            Timber.w("Empty VPN config string provided")
+            return null
+        }
 
         return try {
             when {
@@ -17,15 +25,19 @@ object VpnConfigParser {
                 trimmed.startsWith("vmess://", ignoreCase = true) -> parseVmess(trimmed)
                 trimmed.startsWith("trojan://", ignoreCase = true) -> parseTrojan(trimmed)
                 trimmed.startsWith("ss://", ignoreCase = true) -> parseShadowsocks(trimmed)
-                else -> parseRaw(trimmed)
+                else -> {
+                    Timber.w("Unknown protocol in config: ${trimmed.take(20)}")
+                    parseRaw(trimmed)
+                }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Timber.e(e, "Failed to parse VPN config")
             null
         }
     }
 
     private fun parseVless(link: String): VpnProfile {
+        Timber.d("Parsing VLESS configuration")
         var remaining = link.substring("vless://".length)
         var name = "VLESS Server"
         
@@ -83,22 +95,28 @@ object VpnConfigParser {
     }
 
     private fun parseVmess(link: String): VpnProfile? {
-        val b64 = link.substring("vmess://".length)
-        val json = String(Base64.decode(b64, Base64.DEFAULT))
-        val obj = JSONObject(json)
-        
-        return VpnProfile(
-            name = obj.optString("ps", "VMess Server"),
-            serverIp = obj.optString("add"),
-            port = obj.optInt("port", 443),
-            secretKey = obj.optString("id"),
-            protocol = "VMess",
-            sni = obj.optString("sni", obj.optString("host", ""))
-        )
+        Timber.d("Parsing VMess configuration")
+        return try {
+            val b64 = link.substring("vmess://".length)
+            val json = String(Base64.decode(b64, Base64.DEFAULT))
+            val obj = JSONObject(json)
+            
+            VpnProfile(
+                name = obj.optString("ps", "VMess Server"),
+                serverIp = obj.optString("add"),
+                port = obj.optInt("port", 443),
+                secretKey = obj.optString("id"),
+                protocol = "VMess",
+                sni = obj.optString("sni", obj.optString("host", ""))
+            )
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to parse VMess config")
+            null
+        }
     }
 
     private fun parseTrojan(link: String): VpnProfile {
-        // Simple implementation similar to VLESS
+        Timber.d("Parsing Trojan configuration")
         var remaining = link.substring("trojan://".length)
         var name = "Trojan Server"
         if (remaining.contains("#")) {
@@ -123,9 +141,9 @@ object VpnConfigParser {
     }
 
     private fun parseShadowsocks(link: String): VpnProfile {
-        // ss://method:password@host:port#name
+        Timber.d("Parsing ShadowSocks configuration")
         var remaining = link.substring("ss://".length)
-        var name = "Shadowsocks Server"
+        var name = "ShadowSocks Server"
         if (remaining.contains("#")) {
             val parts = remaining.split("#", limit = 2)
             remaining = parts[0]
@@ -148,6 +166,7 @@ object VpnConfigParser {
     }
 
     private fun parseRaw(link: String): VpnProfile? {
+        Timber.d("Attempting raw IP:port parsing")
         val parts = link.split(":")
         if (parts.size >= 2) {
             val host = parts[0].trim()

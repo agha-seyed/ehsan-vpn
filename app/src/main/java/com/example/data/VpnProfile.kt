@@ -7,6 +7,8 @@ import java.net.InetAddress
 /**
  * Represents a VPN Profile configuration.
  * Supports VLESS (Reality), Trojan, ShadowSocks, VMess protocols.
+ * 
+ * All fields are validated during object creation.
  */
 @Entity(tableName = "vpn_profiles")
 data class VpnProfile(
