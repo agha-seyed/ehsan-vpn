@@ -163,6 +163,7 @@ fun VpnDashboard(
     var showVpsAssistant by remember { mutableStateOf(false) }
     var showAddServerDialog by remember { mutableStateOf(false) }
     var showAdvancedSettingsDialog by remember { mutableStateOf(false) }
+    var showAboutDialog by remember { mutableStateOf(false) }
     
     val isAmoledMode by viewModel.isAmoledMode.collectAsStateWithLifecycle()
     val isSplitTunnelingEnabled by viewModel.isSplitTunnelingEnabled.collectAsStateWithLifecycle()
@@ -316,6 +317,22 @@ fun VpnDashboard(
                                 imageVector = Icons.Default.Tune,
                                 contentDescription = if (isFa) "امکانات پیشرفته" else "Advanced Settings",
                                 tint = CyberGreen,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { showAboutDialog = true },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(Color.White.copy(alpha = 0.05f), CircleShape)
+                                .border(1.dp, GlassBorder, CircleShape)
+                                .testTag("about_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = if (isFa) "درباره ما" else "About Us",
+                                tint = Color.White,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -752,7 +769,11 @@ fun VpnDashboard(
             QrScannerDialog(
                 isFa = isFa,
                 onScanResult = { scannedValue ->
-                    viewModel.parseAndInsertProfile(scannedValue)
+                    if (viewModel.parseAndInsertProfile(scannedValue)) {
+                        Toast.makeText(context, if (isFa) "پروفایل با موفقیت اضافه شد" else "Profile added successfully", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, if (isFa) "خطا در تحلیل لینک کانفیگ" else "Failed to parse config link", Toast.LENGTH_SHORT).show()
+                    }
                     showQrScannerDialog = false
                 },
                 onDismiss = { showQrScannerDialog = false }
@@ -803,6 +824,142 @@ fun VpnDashboard(
                 }
             )
         }
+
+        // --- DIALOG: About Us ---
+        if (showAboutDialog) {
+            AboutDialog(
+                isFa = isFa,
+                onDismiss = { showAboutDialog = false }
+            )
+        }
+            }
+        }
+    }
+}
+
+@Composable
+fun AboutDialog(
+    isFa: Boolean,
+    onDismiss: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .clip(RoundedCornerShape(24.dp))
+                .background(SurfaceCard)
+                .border(1.dp, GlassBorder, RoundedCornerShape(24.dp))
+                .padding(24.dp)
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Header Icon
+                Box(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .background(CyberGreen.copy(alpha = 0.1f), CircleShape)
+                        .border(1.dp, CyberGreen.copy(alpha = 0.3f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Shield,
+                        contentDescription = "Shield Logo",
+                        tint = CyberGreen,
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = if (isFa) "احسان وی‌پی‌ان" else "Ehsan VPN",
+                    color = Color.White,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                Text(
+                    text = "Version 0.1.0 (Wirangaran Build)",
+                    color = CyanGlow,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
+                )
+
+                Text(
+                    text = if (isFa) 
+                        "این اپلیکیشن توسط «احسان نبوی» و گروه نرم‌افزاری ویرانگران (Wirangaran) توسعه یافته است. یک تونل امنیتی قدرتمند و فوق‌سریع با معماری هیبریدی برای رمزنگاری ۱۰۰٪ ترافیک شما."
+                    else 
+                        "This application is proudly developed by Ehsan Nabavi and the Wirangaran group. A powerful, ultra-fast security tunnel using a hybrid architecture to encrypt 100% of your traffic.",
+                    color = TextSecondary,
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 22.sp
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Support Section
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp)
+                        .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                        .border(1.dp, GlassBorder, RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_SENDTO).apply {
+                                data = android.net.Uri.parse("mailto:agha.seyed.ehsan@gmail.com")
+                                putExtra(android.content.Intent.EXTRA_SUBJECT, "Ehsan VPN Support")
+                            }
+                            context.startActivity(android.content.Intent.createChooser(intent, "Send Email"))
+                        }
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SupportAgent,
+                        contentDescription = "Support",
+                        tint = CyanGlow,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = if (isFa) "پشتیبانی و تماس با ما" else "Support & Contact",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "support@wirangaran.com",
+                            color = TextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = CobaltBlue),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = if (isFa) "متوجه شدم" else "Got It",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }
@@ -1817,234 +1974,30 @@ fun parseConnectionLink(rawInput: String, isFa: Boolean): LinkValidationState {
     val trimmed = rawInput.trim()
     if (trimmed.isEmpty()) return LinkValidationState.Empty
 
-    val protocol: String
-    val remaining: String
-    val displayProtocol: String
-
-    when {
-        trimmed.startsWith("vless://", ignoreCase = true) -> {
-            protocol = "VLESS (Reality)"
-            displayProtocol = "VLESS"
-            remaining = trimmed.substring("vless://".length)
+    val profile = com.example.utils.VpnConfigParser.parse(trimmed)
+    
+    return if (profile != null) {
+        val displayProtocol = when {
+            trimmed.startsWith("vless://", ignoreCase = true) -> "VLESS"
+            trimmed.startsWith("vmess://", ignoreCase = true) -> "VMess"
+            trimmed.startsWith("trojan://", ignoreCase = true) -> "Trojan"
+            trimmed.startsWith("ss://", ignoreCase = true) -> "ShadowSocks"
+            else -> "VLESS"
         }
-        trimmed.startsWith("ss://", ignoreCase = true) -> {
-            protocol = "ShadowSocks"
-            displayProtocol = "ShadowSocks"
-            remaining = trimmed.substring("ss://".length)
-        }
-        trimmed.startsWith("trojan://", ignoreCase = true) -> {
-            protocol = "Trojan"
-            displayProtocol = "Trojan"
-            remaining = trimmed.substring("trojan://".length)
-        }
-        trimmed.startsWith("vmess://", ignoreCase = true) -> {
-            protocol = "VLESS (Reality)" // Database storage equivalent
-            displayProtocol = "VMess"
-            remaining = trimmed.substring("vmess://".length)
-        }
-        else -> {
-            val error = if (isFa) 
-                "پروتکل نامعتبر است. فرمت باید با vless:// یا ss:// یا trojan:// یا vmess:// شروع شود."
-                else "Unsupported protocol. Must begin with vless://, ss://, trojan://, or vmess//"
-            return LinkValidationState.Invalid(error)
-        }
-    }
-
-    try {
-        var host = ""
-        var portStr = "443"
-        var secret = ""
-        var sni = "www.google.com"
-        var name = if (isFa) "سرور کانفیگ سریع" else "Imported Server Node"
-
-        if (displayProtocol == "VMess") {
-            val base64Clean = remaining.split("#").first().trim()
-            val paddedBase64 = try {
-                val padLength = (4 - base64Clean.length % 4) % 4
-                base64Clean + "=".repeat(padLength)
-            } catch (e: Exception) {
-                base64Clean
-            }
-            
-            val decodedBytes = try {
-                android.util.Base64.decode(paddedBase64, android.util.Base64.DEFAULT)
-            } catch (e: Exception) {
-                null
-            }
-
-            if (decodedBytes == null) {
-                val err = if (isFa) "کدگذاری Base64 کانفیگ VMess نامعتبر است." else "Invalid VMess Base64 payload."
-                return LinkValidationState.Invalid(err)
-            }
-
-            val decodedJson = String(decodedBytes, Charsets.UTF_8)
-            val jsonObject = try {
-                org.json.JSONObject(decodedJson)
-            } catch (e: Exception) {
-                null
-            }
-
-            if (jsonObject == null) {
-                val err = if (isFa) "فرمت JSON کانفیگ VMess نامعتبر است." else "Invalid VMess JSON format."
-                return LinkValidationState.Invalid(err)
-            }
-
-            host = jsonObject.optString("add", "")
-            portStr = jsonObject.optString("port", "443")
-            secret = jsonObject.optString("id", "")
-            sni = jsonObject.optString("sni", jsonObject.optString("host", "www.google.com"))
-            name = jsonObject.optString("ps", if (isFa) "سرور ویمس استخراجی" else "Decoded VMess Node")
-            
-            if (host.isBlank()) {
-                val err = if (isFa) "آدرس سرور (add) در تنظیمات ویمس پیدا نشد." else "Server host IP (add) parameter absent in base64 payload."
-                return LinkValidationState.Invalid(err)
-            }
-            if (secret.isBlank()) {
-                val err = if (isFa) "شناسه کاربری (id) یافت نشد." else "User credentials UUID (id) mismatch."
-                return LinkValidationState.Invalid(err)
-            }
-        } 
-        else if (displayProtocol == "ShadowSocks") {
-            var rawContent = remaining
-            if (remaining.contains("#")) {
-                val parts = remaining.split("#", limit = 2)
-                rawContent = parts[0]
-                val decodedName = try {
-                    java.net.URLDecoder.decode(parts[1], "UTF-8")
-                } catch (e: Exception) {
-                    parts[1]
-                }
-                if (decodedName.isNotBlank()) name = decodedName
-            }
-
-            if (rawContent.contains("@")) {
-                val parts = rawContent.split("@", limit = 2)
-                val methodPassB64 = parts[0]
-                val hostPort = parts[1]
-                
-                val decodedCreds = try {
-                    val padLen = (4 - methodPassB64.length % 4) % 4
-                    val padded = methodPassB64 + "=".repeat(padLen)
-                    String(android.util.Base64.decode(padded, android.util.Base64.DEFAULT), Charsets.UTF_8)
-                } catch (e: Exception) {
-                    methodPassB64
-                }
-                secret = decodedCreds
-
-                if (hostPort.contains(":")) {
-                    val addrParts = hostPort.split(":")
-                    host = addrParts[0]
-                    portStr = addrParts[1].split("/").firstOrNull() ?: "1080"
-                } else {
-                    host = hostPort
-                    portStr = "1080"
-                }
-            } 
-            else {
-                val decodedAll = try {
-                    val padLen = (4 - rawContent.length % 4) % 4
-                    val padded = rawContent + "=".repeat(padLen)
-                    String(android.util.Base64.decode(padded, android.util.Base64.DEFAULT), Charsets.UTF_8)
-                } catch (e: Exception) {
-                    ""
-                }
-
-                if (decodedAll.contains("@")) {
-                    val parts = decodedAll.split("@", limit = 2)
-                    secret = parts[0]
-                    val hostPort = parts[1]
-                    if (hostPort.contains(":")) {
-                        val addrParts = hostPort.split(":")
-                        host = addrParts[0]
-                        portStr = addrParts[1].split("/").firstOrNull() ?: "1080"
-                    } else {
-                        host = hostPort
-                        portStr = "1080"
-                    }
-                } else {
-                    val err = if (isFa) "قالب کانفیگ شادوساکس غیراستاندارد است." else "Unable to trace Shadowsocks port or IP from payload."
-                    return LinkValidationState.Invalid(err)
-                }
-            }
-        } 
-        else {
-            var mainContent = remaining
-            if (remaining.contains("#")) {
-                val parts = remaining.split("#", limit = 2)
-                mainContent = parts[0]
-                val decodedName = try {
-                    java.net.URLDecoder.decode(parts[1], "UTF-8")
-                } catch (e: Exception) {
-                    parts[1]
-                }
-                if (decodedName.isNotBlank()) name = decodedName
-            }
-
-            if (mainContent.contains("?")) {
-                val parts = mainContent.split("?", limit = 2)
-                mainContent = parts[0]
-                val queryParams = parts[1].split("&")
-                for (param in queryParams) {
-                    val pair = param.split("=")
-                    if (pair.size == 2) {
-                        val key = pair[0].lowercase().trim()
-                        val value = pair[1].trim()
-                        if (key == "sni" || key == "host") {
-                            sni = java.net.URLDecoder.decode(value, "UTF-8")
-                        }
-                    }
-                }
-            }
-
-            if (mainContent.contains("@")) {
-                val parts = mainContent.split("@", limit = 2)
-                secret = parts[0]
-                val hostPort = parts[1]
-                if (hostPort.contains(":")) {
-                    val addrParts = hostPort.split(":")
-                    host = addrParts[0]
-                    portStr = addrParts[1]
-                } else {
-                    host = hostPort
-                    portStr = "443"
-                }
-            } else {
-                val err = if (isFa) "شناسه کاربری کانفیگ یافت نشد (کاراکتر @ مفقود است)." else "Credentials token missing (missing @ splitting symbol)."
-                return LinkValidationState.Invalid(err)
-            }
-        }
-
-        val cleanHost = host.trim()
-        if (cleanHost.isBlank()) {
-            val err = if (isFa) "آدرس آی‌پی یا دامنه میزبان ناقص است." else "Server IP or Host domain cannot be empty."
-            return LinkValidationState.Invalid(err)
-        }
-
-        val portVal = portStr.trim().toIntOrNull()
-        if (portVal == null || portVal !in 1..65535) {
-            val err = if (isFa) "پورت غیراستاندارد است: باید بین ۱ و ۶۵۵۳۵ باشد." else "Invalid Port index (must be 1-65535)."
-            return LinkValidationState.Invalid(err)
-        }
-
-        val cleanSecret = secret.trim()
-        if (cleanSecret.isBlank()) {
-            val err = if (isFa) "رمز عبور یا کلید دسترسی نمی‌تواند خالی باشد." else "Credentials token / passkey is empty."
-            return LinkValidationState.Invalid(err)
-        }
-
-        return LinkValidationState.Valid(
-            name = name.trim(),
-            host = cleanHost,
-            port = portVal,
-            protocol = protocol,
-            secret = cleanSecret,
-            sni = sni.trim(),
+        LinkValidationState.Valid(
+            name = profile.name,
+            host = profile.serverIp,
+            port = profile.port,
+            protocol = profile.protocol,
+            secret = profile.secretKey,
+            sni = profile.sni,
             displayProtocol = displayProtocol
         )
-
-    } catch (e: Exception) {
-        val err = if (isFa) "خطا در پردازش اطلاعات آدرس: ${e.localizedMessage}" else "Parsing error layout: ${e.localizedMessage}"
-        return LinkValidationState.Invalid(err)
+    } else {
+        val error = if (isFa) 
+            "قالب پیوند نامعتبر است یا پروتکل پشتیبانی نمی‌شود."
+            else "Invalid link format or unsupported protocol."
+        LinkValidationState.Invalid(error)
     }
 }
 

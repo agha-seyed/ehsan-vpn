@@ -1,21 +1,31 @@
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
+<!-- TODO: کاربر عزیز، عکسی که گفتید رو آپلود نکرده بودید (یا به دست من نرسید). لطفاً آدرس عکس لوگوی گروه ویرانگران رو اینجا جایگزین کنید -->
+<img width="800" alt="Wirangaran Logo" src="https://via.placeholder.com/800x400.png?text=Wirangaran+Logo+Placeholder" />
 </div>
 
-# Run and deploy your AI Studio app
+# Ehsan VPN (ویرانگران)
 
-This contains everything you need to run your app locally.
+این اپلیکیشن یک کلاینت قدرتمند و امن برای اتصال به شبکه‌های خصوصی مجازی (VPN) در اندروید است که توسط **گروه برنامه‌نویسی ویرانگران (Wirangaran)** توسعه داده شده است.
 
-View your app in AI Studio: https://ai.studio/apps/29fd1585-6ed6-4622-8dc5-5090107052ba
+## معرفی برنامه (Overview)
 
-## Run Locally
+اپلیکیشن **Ehsan VPN** بر پایه هسته قدرتمند **Xray Core** نوشته شده و از جدیدترین و امن‌ترین پروتکل‌های عبور از فیلترینگ از جمله **VLESS (Reality)**، **Trojan** و **ShadowSocks** پشتیبانی می‌کند. 
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+برخی از امکانات کلیدی این برنامه عبارتند از:
+- **رابط کاربری مدرن و سریع (UI/UX):** طراحی شده با استفاده از Jetpack Compose با المان‌های گرافیکی پیشرفته و انیمیشن‌های روان.
+- **پشتیبانی کامل از پروتکل‌های نوین:** اتصال پایدار با استفاده از پروتکل VLESS Reality و Stealth TLS.
+- **تست پینگ و سرعت:** قابلیت بررسی پینگ سرورها و پایش دقیق مصرف ترافیک و سرعت دانلود/آپلود.
+- **تونل‌زنی هوشمند (Split Tunneling):** امکان انتخاب اینکه کدام اپلیکیشن‌ها از تونل VPN عبور کنند و کدام از اینترنت عادی استفاده کنند.
+- **پایداری در اندروید ۱۴+:** بهینه‌سازی شده برای اجرای سرویس در پس‌زمینه (Foreground Service) بدون ایجاد مشکل فورس‌کلوز یا مصرف زیاد باتری.
 
+## توسعه و راه اندازی (Run Locally)
 
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
+**پیش‌نیازها:** [Android Studio](https://developer.android.com/studio)
+
+۱. پروژه را در Android Studio باز کنید.
+۲. منتظر بمانید تا تمامی وابستگی‌های گریدل (Gradle dependencies) دانلود شوند.
+۳. در فایل `local.properties` یا `build.gradle.kts`، تنظیمات مربوط به SDK و بیلد را مطابق با محیط خود بررسی کنید.
+۴. برنامه را بر روی شبیه‌ساز (Emulator) یا دستگاه واقعی خود اجرا کنید. (ترجیحاً برای تست اتصال واقعی، از دستگاه فیزیکی متصل به اینترنت استفاده شود).
+
+---
+> 🌟 *توسعه‌یافته با افتخار توسط گروه ویرانگران* 🌟

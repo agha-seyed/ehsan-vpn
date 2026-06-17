@@ -9,7 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-@Database(entities = [VpnProfile::class], version = 1, exportSchema = false)
+@Database(entities = [VpnProfile::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun vpnProfileDao(): VpnProfileDao
 
@@ -25,6 +25,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "horizon_vpn_database"
                 )
                 .addCallback(AppDatabaseCallback(scope))
+                .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance
                 instance

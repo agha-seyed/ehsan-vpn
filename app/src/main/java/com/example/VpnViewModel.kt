@@ -179,6 +179,25 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
             AppInfo("Melli Bank (بانک ملی)", "ir.bmi.app", true),
             AppInfo("Mellat Bank (بانک ملت)", "ir.mellatbank.mobile", true)
         )
+
+        // Seed initial default servers
+        viewModelScope.launch {
+            try {
+                val currentProfiles = repository.allProfiles.first()
+                if (currentProfiles.isEmpty()) {
+                    val defaultLinks = listOf(
+                        "vless://92bc97ac-174c-41ea-9605-71cca5e06b9a@185.26.236.167:443?type=tcp&encryption=none&security=reality&pbk=kijXl7QBHte6njGE51tJJBi2-PRkms7-iF6e6LIkAT0&fp=chrome&sni=www.microsoft.com&sid=8bf0&spx=%2F#Wirangaran-Negar",
+                        "vless://189e9f5f-2fee-423f-b8e8-61ecfa8764e6@185.26.236.167:443?type=tcp&encryption=none&security=reality&pbk=kijXl7QBHte6njGE51tJJBi2-PRkms7-iF6e6LIkAT0&fp=chrome&sni=www.microsoft.com&sid=8bf0&spx=%2F&flow=xtls-rprx-vision#Wirangaran-Eshrat",
+                        "vless://bf1b3041-f16c-4e9b-be1e-a95c9adfb093@185.26.236.167:2082?type=ws&encryption=none&path=%2Fnabavi&host=cdn.zharftec.com&security=none#Wirangar-Ehsan",
+                        "vless://94c6d5b2-e456-4742-9a3c-43e248576391@185.26.236.167:2083?type=ws&encryption=none&path=%2Fmousa&host=cdn.zharftec.com&security=tls&fp=chrome&alpn=h2%2Chttp%2F1.1&sni=cdn.zharftec.com#Mousa-Mousa",
+                        "vless://653f6ee5-922a-4cfd-93d9-154d3e8d3958@185.26.236.167:2083?type=ws&encryption=none&path=%2Fmousa&host=cdn.zharftec.com&security=tls&fp=chrome&alpn=h2%2Chttp%2F1.1&sni=cdn.zharftec.com#Mousa-negari"
+                    )
+                    defaultLinks.forEach { parseAndInsertProfile(it) }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     /**
@@ -186,120 +205,13 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
      * URI pattern: protocol://secret@host:port?sni=google.com#Name
      */
     fun parseAndInsertProfile(rawLink: String): Boolean {
-        val trimmed = rawLink.trim()
-        if (trimmed.isEmpty()) return false
-        
-        try {
-            var scheme = "VLESS (Reality)"
-            var remaining = ""
-            
-            if (trimmed.startsWith("vless://", ignoreCase = true)) {
-                scheme = "VLESS (Reality)"
-                remaining = trimmed.substring("vless://".length)
-            } else if (trimmed.startsWith("trojan://", ignoreCase = true)) {
-                scheme = "Trojan"
-                remaining = trimmed.substring("trojan://".length)
-            } else if (trimmed.startsWith("ss://", ignoreCase = true)) {
-                scheme = "ShadowSocks"
-                remaining = trimmed.substring("ss://".length)
-            } else if (trimmed.startsWith("vmess://", ignoreCase = true)) {
-                scheme = "VLESS (Reality)" // Fallback representation
-                remaining = trimmed.substring("vmess://".length)
-            } else {
-                // Raw fallback IP:Port
-                val parts = trimmed.split(":")
-                if (parts.size >= 2) {
-                    val ip = parts[0].trim()
-                    val port = parts[1].split("/").firstOrNull()?.trim()?.toIntOrNull() ?: 443
-                    val newProfile = VpnProfile(
-                        name = if (_appLanguage.value == "fa") "سرور دستی احسان" else "Ehsan Manual Config",
-                        serverIp = ip,
-                        port = port,
-                        secretKey = "EhsanVPNManualKey",
-                        protocol = "VLESS (Reality)"
-                    )
-                    insertProfile(newProfile)
-                    return true
-                }
-                return false
-            }
-
-            // Extract label/hash name at the end
-            var name = if (_appLanguage.value == "fa") "سرور احسان طلایی" else "Ehsan Golden Node"
-            var mainContent = remaining
-            if (remaining.contains("#")) {
-                val nameParts = remaining.split("#", limit = 2)
-                mainContent = nameParts[0]
-                val decodedName = try {
-                    URLDecoder.decode(nameParts[1], "UTF-8")
-                } catch (e: Exception) {
-                    nameParts[1]
-                }
-                if (decodedName.isNotBlank()) {
-                    name = decodedName.trim()
-                }
-            }
-
-            // Extract query parameters like SNI & Reality Keys (pbk, sid, flow)
-            var sni = "www.google.com"
-            var isReality = false
-            var publicKey = ""
-            var shortId = ""
-            var cleanMain = mainContent
-            if (mainContent.contains("?")) {
-                val queryParts = mainContent.split("?", limit = 2)
-                cleanMain = queryParts[0]
-                val query = queryParts[1]
-                val params = query.split("&")
-                for (param in params) {
-                    val pair = param.split("=", limit = 2)
-                    if (pair.size == 2) {
-                        val key = pair[0].trim().lowercase()
-                        val value = URLDecoder.decode(pair[1].trim(), "UTF-8")
-                        if (key == "sni" || key == "host") {
-                            sni = value
-                        } else if (key == "security" && value == "reality") {
-                            isReality = true
-                        } else if (key == "pbk" || key == "publickey") {
-                            publicKey = value
-                        } else if (key == "sid" || key == "shortid") {
-                            shortId = value
-                        }
-                    }
-                }
-            }
-
-            // Adjust scheme label based on reality parameters detected
-            val finalScheme = if (isReality || publicKey.isNotEmpty() || scheme == "VLESS (Reality)") "VLESS (Reality)" else scheme
-            val finalName = if (isReality && !name.contains("Reality")) "$name [Reality]" else name
-
-            // Split credential and address: secretKey@ip:port
-            if (cleanMain.contains("@")) {
-                val credParts = cleanMain.split("@", limit = 2)
-                val secretKey = credParts[0].trim()
-                val addrPart = credParts[1].trim()
-                
-                val hostPort = addrPart.split(":", limit = 2)
-                if (hostPort.size == 2) {
-                    val serverIp = hostPort[0].trim()
-                    val port = hostPort[1].trim().toIntOrNull() ?: 443
-                    
-                    val newProfile = VpnProfile(
-                        name = finalName,
-                        serverIp = serverIp,
-                        port = port,
-                        secretKey = secretKey,
-                        protocol = finalScheme,
-                        sni = sni
-                    )
-                    insertProfile(newProfile)
-                    return true
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        val profile = com.example.utils.VpnConfigParser.parse(rawLink)
+        return if (profile != null) {
+            insertProfile(profile)
+            true
+        } else {
+            false
         }
-        return false
     }
 
     fun insertProfile(profile: VpnProfile) {
@@ -354,6 +266,12 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
                 putExtra(HorizonVpnService.EXTRA_IP, active.serverIp)
                 putExtra(HorizonVpnService.EXTRA_PORT, active.port)
                 putExtra(HorizonVpnService.EXTRA_PROTOCOL, active.protocol)
+                putExtra(HorizonVpnService.EXTRA_SECRET_KEY, active.secretKey)
+                putExtra(HorizonVpnService.EXTRA_SNI, active.sni)
+                putExtra(HorizonVpnService.EXTRA_PBK, active.pbk)
+                putExtra(HorizonVpnService.EXTRA_SID, active.sid)
+                putExtra(HorizonVpnService.EXTRA_FP, active.fp)
+                putExtra(HorizonVpnService.EXTRA_FLOW, active.flow)
 
                 if (_isSplitTunnelingEnabled.value) {
                     val bypassedAppsList = ArrayList(_splitApps.value.filter { it.isBypassed }.map { it.packageName })
@@ -465,6 +383,12 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
                     putExtra(HorizonVpnService.EXTRA_IP, best.serverIp)
                     putExtra(HorizonVpnService.EXTRA_PORT, best.port)
                     putExtra(HorizonVpnService.EXTRA_PROTOCOL, best.protocol)
+                    putExtra(HorizonVpnService.EXTRA_SECRET_KEY, best.secretKey)
+                    putExtra(HorizonVpnService.EXTRA_SNI, best.sni)
+                    putExtra(HorizonVpnService.EXTRA_PBK, best.pbk)
+                    putExtra(HorizonVpnService.EXTRA_SID, best.sid)
+                    putExtra(HorizonVpnService.EXTRA_FP, best.fp)
+                    putExtra(HorizonVpnService.EXTRA_FLOW, best.flow)
                 }
                 context.startService(connectIntent)
             }
@@ -497,28 +421,56 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
             val active = activeProfile.value
             val ip = active?.serverIp ?: "1.1.1.1"
             val port = active?.port ?: 443
+            
+            // 1. Measure Ping
             val ping = measureTcpPing(ip, port)
-            _testedPingMs.value = if (ping > 0) ping else (50..120).random()
-            _speedProgress.value = 0.15f
-            delay(500)
-
-            val steps = 15
-            for (i in 1..steps) {
-                _speedProgress.value = 0.15f + (i.toFloat() / steps) * 0.45f
-                val base = if (ping > 0 && ping < 150) 45.0 else 18.0
-                _testedDownloadMbps.value = base + (0..15).random() + Math.sin(i.toDouble()) * 4
-                delay(120)
+            _testedPingMs.value = if (ping > 0) ping else -1
+            _speedProgress.value = 0.1f
+            
+            if (ping <= 0) {
+                _isTestingSpeed.value = false
+                return@launch
             }
 
-            for (i in 1..steps) {
-                _speedProgress.value = 0.60f + (i.toFloat() / steps) * 0.40f
-                val base = if (ping > 0 && ping < 150) 18.0 else 5.0
-                _testedUploadMbps.value = base + (0..6).random() + Math.sin(i.toDouble()) * 2
-                delay(120)
+            // 2. Real Download Test using OkHttp
+            // We use a small file from Cloudflare for testing
+            val downloadUrl = "https://speed.cloudflare.com/__down?bytes=5000000" // 5MB
+            val client = okhttp3.OkHttpClient.Builder()
+                .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+
+            val request = okhttp3.Request.Builder().url(downloadUrl).build()
+            
+            withContext(Dispatchers.IO) {
+                try {
+                    val start = System.currentTimeMillis()
+                    client.newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) return@withContext
+                        val body = response.body ?: return@withContext
+                        val inputStream = body.byteStream()
+                        val buffer = ByteArray(16384)
+                        var bytesRead: Int
+                        var totalRead = 0L
+                        val contentLength = 5000000L
+
+                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                            totalRead += bytesRead
+                            val elapsed = (System.currentTimeMillis() - start) / 1000.0
+                            if (elapsed > 0) {
+                                val mbps = (totalRead * 8 / 1_000_000.0) / elapsed
+                                _testedDownloadMbps.value = mbps
+                            }
+                            _speedProgress.value = 0.1f + (totalRead.toFloat() / contentLength) * 0.8f
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
 
             _speedProgress.value = 1.0f
-            delay(300)
+            delay(500)
             _isTestingSpeed.value = false
         }
     }
