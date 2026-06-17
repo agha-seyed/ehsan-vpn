@@ -1,6 +1,5 @@
 <div align="center">
-<!-- TODO: کاربر عزیز، در صورت داشتن عکس لوگو، آدرس آن را با لینک پایین جایگزین کنید -->
-<img width="800" alt="Wirangaran Logo" src="https://via.placeholder.com/800x400.png?text=Wirangaran+Logo+Placeholder" />
+<img width="800" alt="Wirangaran Logo" src="wirangaran-logo.jpg" />
 </div>
 
 <div align="center">
