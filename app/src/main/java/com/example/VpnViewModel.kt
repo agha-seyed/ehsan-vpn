@@ -20,6 +20,7 @@ import java.net.URLDecoder
 
 class VpnViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val prefsHelper = com.example.utils.SharedPreferencesHelper(application)
     private val repository: VpnRepository
     val allProfiles: StateFlow<List<VpnProfile>>
     val activeProfile: StateFlow<VpnProfile?>
@@ -82,15 +83,17 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
     val totalBytesUp: StateFlow<Long> = HorizonVpnService.totalBytesUp
 
     // AMOLED Dark Mode State
-    private val _isAmoledMode = MutableStateFlow(false)
+    private val _isAmoledMode = MutableStateFlow(prefsHelper.isAmoledMode)
     val isAmoledMode: StateFlow<Boolean> = _isAmoledMode
 
     fun toggleAmoledMode() {
-        _isAmoledMode.value = !_isAmoledMode.value
+        val newValue = !_isAmoledMode.value
+        _isAmoledMode.value = newValue
+        prefsHelper.isAmoledMode = newValue
     }
 
     // Split Tunneling States
-    private val _isSplitTunnelingEnabled = MutableStateFlow(false)
+    private val _isSplitTunnelingEnabled = MutableStateFlow(prefsHelper.isSplitTunnelingEnabled)
     val isSplitTunnelingEnabled: StateFlow<Boolean> = _isSplitTunnelingEnabled
 
     private val _splitApps = MutableStateFlow<List<AppInfo>>(emptyList())
@@ -98,13 +101,16 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setSplitTunnelingEnabled(enabled: Boolean) {
         _isSplitTunnelingEnabled.value = enabled
+        prefsHelper.isSplitTunnelingEnabled = enabled
     }
 
     fun toggleAppInSplitTunnel(packageName: String) {
         val current = _splitApps.value
-        _splitApps.value = current.map {
+        val updated = current.map {
             if (it.packageName == packageName) it.copy(isBypassed = !it.isBypassed) else it
         }
+        _splitApps.value = updated
+        prefsHelper.saveBypassedApps(updated.filter { it.isBypassed }.map { it.packageName })
     }
 
     fun loadInstalledApps(context: Context) {
@@ -121,6 +127,8 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
                         } else null
                     }.sortedBy { it.appName.lowercase() }
                     
+                    val savedBypassed = prefsHelper.getBypassedApps()
+                    
                     val fallbackList = if (list.isEmpty()) {
                         listOf(
                             AppInfo("Telegram", "org.telegram.messenger", true),
@@ -133,9 +141,8 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
                         )
                     } else list
 
-                    val currentMap = _splitApps.value.associate { it.packageName to it.isBypassed }
                     _splitApps.value = fallbackList.map { app ->
-                        app.copy(isBypassed = currentMap[app.packageName] ?: app.isBypassed)
+                        app.copy(isBypassed = savedBypassed.contains(app.packageName))
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -145,11 +152,13 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Bilingual state state flow: "fa" (Farsi) or "en" (English)
-    private val _appLanguage = MutableStateFlow("fa")
+    private val _appLanguage = MutableStateFlow(prefsHelper.appLanguage)
     val appLanguage: StateFlow<String> = _appLanguage
 
     fun toggleLanguage() {
-        _appLanguage.value = if (_appLanguage.value == "fa") "en" else "fa"
+        val newLang = if (_appLanguage.value == "fa") "en" else "fa"
+        _appLanguage.value = newLang
+        prefsHelper.appLanguage = newLang
     }
 
     // VPS Deployment Script Assistant States
