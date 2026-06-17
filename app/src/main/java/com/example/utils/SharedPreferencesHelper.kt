@@ -20,29 +20,22 @@ class SharedPreferencesHelper(context: Context) {
         private const val KEY_AUTO_CONNECT = "auto_connect"
     }
 
-    // Language preference (default: Farsi)
     var language: String
         get() = preferences.getString(KEY_LANGUAGE, "fa") ?: "fa"
         set(value) = preferences.edit().putString(KEY_LANGUAGE, value).apply()
 
-    // AMOLED mode preference (default: false)
     var isAmoledMode: Boolean
         get() = preferences.getBoolean(KEY_AMOLED_MODE, false)
         set(value) = preferences.edit().putBoolean(KEY_AMOLED_MODE, value).apply()
 
-    // Split tunneling preference (default: false)
     var isSplitTunnelingEnabled: Boolean
         get() = preferences.getBoolean(KEY_SPLIT_TUNNELING, false)
         set(value) = preferences.edit().putBoolean(KEY_SPLIT_TUNNELING, value).apply()
 
-    // Auto-connect preference (default: false)
     var isAutoConnectEnabled: Boolean
         get() = preferences.getBoolean(KEY_AUTO_CONNECT, false)
         set(value) = preferences.edit().putBoolean(KEY_AUTO_CONNECT, value).apply()
 
-    /**
-     * Clear all preferences
-     */
     fun clear() {
         preferences.edit().clear().apply()
     }
