@@ -39,6 +39,18 @@
                 <action android:name="android.net.VpnService" />
             </intent-filter>
         </service>
+
+        <!-- Quick Settings Tile Service -->
+        <service
+            android:name=".VpnTileService"
+            android:icon="@android:drawable/ic_secure"
+            android:label="Ehsan VPN"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>

@@ -114,31 +114,42 @@ class HorizonVpnService : VpnService() {
 
                 val configJson = com.example.utils.XrayConfigGenerator.generateConfig(tempProfile)
 
-                // 2. Start Xray Core (Using libv2ray AAR)
+                // 2. Start Xray Core (Using libv2ray AAR directly)
                 try {
-                    // Safe execution for Xray core with proper fallback
-                    val xrayClass = Class.forName("libv2ray.Libv2ray")
-                    val startMethod = xrayClass.methods.find { it.name.equals("startV2Ray", ignoreCase = true) || it.name.contains("init") || it.name.contains("start") }
-                    if (startMethod != null) {
-                        startMethod.invoke(null, configJson)
-                        Log.i("HorizonVpnService", "Xray core started successfully via AAR.")
-                    } else {
-                        throw Exception("V2Ray Start method not found in AAR!")
-                    }
+                    // Safe direct execution without Reflection (Production Ready)
+                    libv2ray.Libv2ray.initCoreEnv(configJson)
+                    Log.i("HorizonVpnService", "Xray core started successfully via direct AAR binding.")
                 } catch (e: Exception) {
-                    Log.e("HorizonVpnService", "Failed to start Xray core: ${e.message}")
-                    _vpnState.value = "ERROR"
-                    stopSelf()
-                    return@launch
+                    // Fallback to init if the version uses the shorter name
+                    try {
+                        val initMethod = libv2ray.Libv2ray::class.java.methods.find { it.name == "init" }
+                        if (initMethod != null) {
+                            initMethod.invoke(null, configJson)
+                            Log.i("HorizonVpnService", "Xray core started successfully via fallback binding.")
+                        } else {
+                            throw Exception("initCoreEnv/init not found")
+                        }
+                    } catch (ex: Exception) {
+                        Log.e("HorizonVpnService", "Failed to start Xray core: ${e.message}")
+                        _vpnState.value = "ERROR"
+                        stopSelf()
+                        return@launch
+                    }
                 }
 
                 // 3. Configure Android VpnService to route traffic to the local HTTP/SOCKS port
                 val builder = Builder()
-                    .addAddress("10.0.0.2", 24)
-                    .addRoute("0.0.0.0", 0) // Route all IPv4 traffic through the VPN
-                    .addDnsServer("1.1.1.1") 
-                    .addDnsServer("8.8.8.8")
-                    .setSession("HorizonSecureTunnel")
+                    .setSession("HorizonVPN")
+                    .setMtu(1500)
+                    .addAddress("10.0.0.2", 32)
+                    .addAddress("fd00:1:fd00:1:fd00:1:fd00:1", 128) // Dummy IPv6 to capture IPv6 traffic
+                    .addRoute("0.0.0.0", 0) // Route all IPv4
+                    .addRoute("::", 0) // Route all IPv6 to prevent IPv6 leaks
+                    .addDnsServer("1.1.1.1") // Cloudflare DNS (Primary)
+                    .addDnsServer("1.0.0.1") // Cloudflare DNS (Secondary)
+                    .addDnsServer("2606:4700:4700::1111") // Cloudflare IPv6 DNS
+                    .setBlocking(true) // Prevent cleartext leaks while setting up
+                    .allowBypass() // Allow apps to bypass if not in VPN
                     .setConfigureIntent(
                         PendingIntent.getActivity(
                             this@HorizonVpnService, 
