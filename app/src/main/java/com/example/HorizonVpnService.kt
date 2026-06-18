@@ -39,6 +39,7 @@ class HorizonVpnService : VpnService() {
         const val EXTRA_SID = "com.example.horizonvpn.EXTRA_SID"
         const val EXTRA_FP = "com.example.horizonvpn.EXTRA_FP"
         const val EXTRA_FLOW = "com.example.horizonvpn.EXTRA_FLOW"
+        const val EXTRA_ALPN = "com.example.horizonvpn.EXTRA_ALPN"
 
         // State & Stats flows for direct Compose binding
         private val _vpnState = MutableStateFlow("DISCONNECTED") // CONNECTED, CONNECTING, DISCONNECTED, ERROR
@@ -107,23 +108,28 @@ class HorizonVpnService : VpnService() {
                     pbk = intent?.getStringExtra(EXTRA_PBK) ?: "",
                     sid = intent?.getStringExtra(EXTRA_SID) ?: "",
                     fp = intent?.getStringExtra(EXTRA_FP) ?: "chrome",
-                    flow = intent?.getStringExtra(EXTRA_FLOW) ?: ""
+                    flow = intent?.getStringExtra(EXTRA_FLOW) ?: "",
+                    alpn = intent?.getStringExtra(EXTRA_ALPN) ?: ""
                 )
 
                 val configJson = com.example.utils.XrayConfigGenerator.generateConfig(tempProfile)
 
                 // 2. Start Xray Core (Using libv2ray AAR)
                 try {
-                    // This calls the Xray core from the downloaded AAR
-                    // Using Reflection just in case the AAR version differs slightly to avoid compilation crash
+                    // Safe execution for Xray core with proper fallback
                     val xrayClass = Class.forName("libv2ray.Libv2ray")
-                    val startMethod = xrayClass.methods.find { it.name.contains("start") || it.name.contains("init") }
+                    val startMethod = xrayClass.methods.find { it.name.equals("startV2Ray", ignoreCase = true) || it.name.contains("init") || it.name.contains("start") }
                     if (startMethod != null) {
                         startMethod.invoke(null, configJson)
                         Log.i("HorizonVpnService", "Xray core started successfully via AAR.")
+                    } else {
+                        throw Exception("V2Ray Start method not found in AAR!")
                     }
                 } catch (e: Exception) {
-                    Log.e("HorizonVpnService", "Failed to start Xray core, make sure AAR is linked: ${e.message}")
+                    Log.e("HorizonVpnService", "Failed to start Xray core: ${e.message}")
+                    _vpnState.value = "ERROR"
+                    stopSelf()
+                    return@launch
                 }
 
                 // 3. Configure Android VpnService to route traffic to the local HTTP/SOCKS port
@@ -211,15 +217,21 @@ class HorizonVpnService : VpnService() {
         var dummySec = 0
         var lastTotalRx = 0L
         var lastTotalTx = 0L
+        var errorCount = 0
 
-        while (kotlinx.coroutines.currentCoroutineContext().isActive) {
+        while (kotlinx.coroutines.currentCoroutineContext().isActive && _vpnState.value == "CONNECTED") {
             delay(1000)
             dummySec++
             
             // Read REAL traffic stats from C++ Tun2Socks engine!
-            val stats = com.v2ray.ang.service.TProxyService.TProxyGetStats()
+            val stats = try {
+                com.v2ray.ang.service.TProxyService.TProxyGetStats()
+            } catch (e: Exception) {
+                null
+            }
             
             if (stats != null && stats.size >= 2) {
+                errorCount = 0
                 val currentTx = stats[0] // Bytes uploaded
                 val currentRx = stats[1] // Bytes downloaded
 
@@ -239,9 +251,16 @@ class HorizonVpnService : VpnService() {
                 // Real-time speed output nested on the system tray widget
                 showNotification("سپر امنیتی فعال است", "درحال مسیریابی کدگذاری شده", maxOf(0f, dSpeed))
             } else {
-                // Fallback to 0 if stats fail
+                errorCount++
                 _downloadSpeed.value = 0f
                 _uploadSpeed.value = 0f
+                
+                // If stats fail continuously for 10 seconds, assume connection dropped
+                if (errorCount >= 10) {
+                    Log.e("HorizonVpnService", "Tunnel loop stats failed 10 times. Assuming disconnect.")
+                    stopVpn()
+                    break
+                }
             }
         }
     }

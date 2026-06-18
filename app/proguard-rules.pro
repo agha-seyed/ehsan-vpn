@@ -19,3 +19,8 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Xray Core & V2rayNG Bindings Rules
+-keep class libv2ray.** { *; }
+-keep class com.v2ray.** { *; }
+-keep class go.** { *; }

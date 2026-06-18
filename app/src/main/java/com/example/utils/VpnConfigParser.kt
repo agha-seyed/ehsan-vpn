@@ -40,6 +40,7 @@ object VpnConfigParser {
         var sid = ""
         var fp = "chrome"
         var flow = ""
+        var alpn = ""
         
         var cleanMain = remaining
         if (remaining.contains("?")) {
@@ -57,6 +58,7 @@ object VpnConfigParser {
                         "sid", "shortid" -> sid = value
                         "fp" -> fp = value
                         "flow" -> flow = value
+                        "alpn" -> alpn = value
                     }
                 }
             }
@@ -78,7 +80,8 @@ object VpnConfigParser {
             pbk = pbk,
             sid = sid,
             fp = fp,
-            flow = flow
+            flow = flow,
+            alpn = alpn
         )
     }
 

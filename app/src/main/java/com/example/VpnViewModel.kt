@@ -195,11 +195,9 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
                 val currentProfiles = repository.allProfiles.first()
                 if (currentProfiles.isEmpty()) {
                     val defaultLinks = listOf(
-                        "vless://92bc97ac-174c-41ea-9605-71cca5e06b9a@185.26.236.167:443?type=tcp&encryption=none&security=reality&pbk=kijXl7QBHte6njGE51tJJBi2-PRkms7-iF6e6LIkAT0&fp=chrome&sni=www.microsoft.com&sid=8bf0&spx=%2F#Wirangaran-Negar",
-                        "vless://189e9f5f-2fee-423f-b8e8-61ecfa8764e6@185.26.236.167:443?type=tcp&encryption=none&security=reality&pbk=kijXl7QBHte6njGE51tJJBi2-PRkms7-iF6e6LIkAT0&fp=chrome&sni=www.microsoft.com&sid=8bf0&spx=%2F&flow=xtls-rprx-vision#Wirangaran-Eshrat",
-                        "vless://bf1b3041-f16c-4e9b-be1e-a95c9adfb093@185.26.236.167:2082?type=ws&encryption=none&path=%2Fnabavi&host=cdn.zharftec.com&security=none#Wirangar-Ehsan",
-                        "vless://94c6d5b2-e456-4742-9a3c-43e248576391@185.26.236.167:2083?type=ws&encryption=none&path=%2Fmousa&host=cdn.zharftec.com&security=tls&fp=chrome&alpn=h2%2Chttp%2F1.1&sni=cdn.zharftec.com#Mousa-Mousa",
-                        "vless://653f6ee5-922a-4cfd-93d9-154d3e8d3958@185.26.236.167:2083?type=ws&encryption=none&path=%2Fmousa&host=cdn.zharftec.com&security=tls&fp=chrome&alpn=h2%2Chttp%2F1.1&sni=cdn.zharftec.com#Mousa-negari"
+                        "vless://00000000-0000-0000-0000-000000000000@127.0.0.1:443?type=tcp&encryption=none&security=reality&pbk=YourPublicKeyHere&fp=chrome&sni=www.google.com&sid=1234abcd&flow=xtls-rprx-vision#Example-Server-1",
+                        "trojan://YourPasswordHere@127.0.0.1:443?security=tls&sni=www.google.com#Example-Trojan",
+                        "vless://00000000-0000-0000-0000-000000000000@127.0.0.1:2083?type=ws&encryption=none&path=%2Fexample&host=cdn.example.com&security=tls&sni=cdn.example.com#Example-CDN"
                     )
                     defaultLinks.forEach { parseAndInsertProfile(it) }
                 }
@@ -252,42 +250,53 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
         _selectedPanel.value = panel
     }
 
+    private var isToggling = false
+
     /**
      * Toggles connection to the active VPN profile using VpnService.
      * Starts or stops the HorizonVpnService.
      */
     fun toggleVpnConnection(context: Context, prepareIntentResult: Intent?) {
-        val active = activeProfile.value
-        val currentState = vpnState.value
+        if (isToggling) return
+        
+        viewModelScope.launch {
+            isToggling = true
+            val active = activeProfile.value
+            val currentState = vpnState.value
 
-        if (currentState == "CONNECTED" || currentState == "CONNECTING") {
-            // Send DISCONNECT intent to VpnService
-            val intent = Intent(context, HorizonVpnService::class.java).apply {
-                action = HorizonVpnService.ACTION_DISCONNECT
-            }
-            context.startService(intent)
-        } else {
-            if (active == null) return
+            if (currentState == "CONNECTED" || currentState == "CONNECTING") {
+                // Send DISCONNECT intent to VpnService
+                val intent = Intent(context, HorizonVpnService::class.java).apply {
+                    action = HorizonVpnService.ACTION_DISCONNECT
+                }
+                context.startService(intent)
+            } else {
+                if (active != null) {
+                    val intent = Intent(context, HorizonVpnService::class.java).apply {
+                        action = HorizonVpnService.ACTION_CONNECT
+                        putExtra(HorizonVpnService.EXTRA_IP, active.serverIp)
+                        putExtra(HorizonVpnService.EXTRA_PORT, active.port)
+                        putExtra(HorizonVpnService.EXTRA_PROTOCOL, active.protocol)
+                        putExtra(HorizonVpnService.EXTRA_SECRET_KEY, active.secretKey)
+                        putExtra(HorizonVpnService.EXTRA_SNI, active.sni)
+                        putExtra(HorizonVpnService.EXTRA_PBK, active.pbk)
+                        putExtra(HorizonVpnService.EXTRA_SID, active.sid)
+                        putExtra(HorizonVpnService.EXTRA_FP, active.fp)
+                        putExtra(HorizonVpnService.EXTRA_FLOW, active.flow)
+                        putExtra(HorizonVpnService.EXTRA_ALPN, active.alpn)
 
-            // If prepareIntentResult is provided, it means system permission was granted or is skipped
-            val intent = Intent(context, HorizonVpnService::class.java).apply {
-                action = HorizonVpnService.ACTION_CONNECT
-                putExtra(HorizonVpnService.EXTRA_IP, active.serverIp)
-                putExtra(HorizonVpnService.EXTRA_PORT, active.port)
-                putExtra(HorizonVpnService.EXTRA_PROTOCOL, active.protocol)
-                putExtra(HorizonVpnService.EXTRA_SECRET_KEY, active.secretKey)
-                putExtra(HorizonVpnService.EXTRA_SNI, active.sni)
-                putExtra(HorizonVpnService.EXTRA_PBK, active.pbk)
-                putExtra(HorizonVpnService.EXTRA_SID, active.sid)
-                putExtra(HorizonVpnService.EXTRA_FP, active.fp)
-                putExtra(HorizonVpnService.EXTRA_FLOW, active.flow)
-
-                if (_isSplitTunnelingEnabled.value) {
-                    val bypassedAppsList = ArrayList(_splitApps.value.filter { it.isBypassed }.map { it.packageName })
-                    putStringArrayListExtra(HorizonVpnService.EXTRA_BYPASS_APPS, bypassedAppsList)
+                        if (_isSplitTunnelingEnabled.value) {
+                            val bypassedAppsList = ArrayList(_splitApps.value.filter { it.isBypassed }.map { it.packageName })
+                            putStringArrayListExtra(HorizonVpnService.EXTRA_BYPASS_APPS, bypassedAppsList)
+                        }
+                    }
+                    context.startService(intent)
                 }
             }
-            context.startService(intent)
+            
+            // Debounce to prevent rapid double-clicks
+            delay(1000)
+            isToggling = false
         }
     }
 
@@ -398,6 +407,7 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
                     putExtra(HorizonVpnService.EXTRA_SID, best.sid)
                     putExtra(HorizonVpnService.EXTRA_FP, best.fp)
                     putExtra(HorizonVpnService.EXTRA_FLOW, best.flow)
+                    putExtra(HorizonVpnService.EXTRA_ALPN, best.alpn)
                 }
                 context.startService(connectIntent)
             }

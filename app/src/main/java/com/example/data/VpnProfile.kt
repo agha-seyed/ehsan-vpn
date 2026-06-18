@@ -16,6 +16,7 @@ data class VpnProfile(
     val sid: String = "", // Reality Short Id
     val fp: String = "chrome", // TLS Fingerprint
     val flow: String = "", // Flow (e.g. xtls-rprx-vision)
+    val alpn: String = "", // ALPN (e.g. h2,http/1.1)
     val latencyMs: Int = -1, // Ping latency or simulated speed
     val isActive: Boolean = false
 )

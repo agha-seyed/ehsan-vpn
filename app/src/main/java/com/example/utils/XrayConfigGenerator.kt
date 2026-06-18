@@ -18,7 +18,8 @@ object XrayConfigGenerator {
                 sni = profile.sni,
                 sid = profile.sid,
                 fp = profile.fp,
-                flow = profile.flow
+                flow = profile.flow,
+                alpn = profile.alpn
             )
             profile.protocol.contains("Trojan", ignoreCase = true) -> generateTrojanConfig(profile)
             profile.protocol.contains("ShadowSocks", ignoreCase = true) -> generateShadowsocksConfig(profile)
@@ -30,7 +31,8 @@ object XrayConfigGenerator {
                 sni = profile.sni,
                 sid = profile.sid,
                 fp = profile.fp,
-                flow = profile.flow
+                flow = profile.flow,
+                alpn = profile.alpn
             )
         }
     }
@@ -131,7 +133,8 @@ object XrayConfigGenerator {
         sni: String,
         sid: String,
         fp: String = "chrome",
-        flow: String = "xtls-rprx-vision"
+        flow: String = "xtls-rprx-vision",
+        alpn: String = ""
     ): String {
         
         // Root config
@@ -196,6 +199,12 @@ object XrayConfigGenerator {
                     put("spiderX", "/")
                 }
                 put("realitySettings", realitySettings)
+                
+                if (alpn.isNotEmpty()) {
+                    val alpnArray = JSONArray()
+                    alpn.split(",").forEach { alpnArray.put(it) }
+                    put("alpn", alpnArray)
+                }
             }
             put("streamSettings", streamSettings)
         }
