@@ -33,7 +33,7 @@ object VpnConfigParser {
         val params = parseQuery(uri.rawQuery)
 
         return VpnProfile(
-            name = decodeComponent(uri.rawFragment).ifBlank { "VLESS Server" },
+            name = uri.rawFragment?.let(::decodeComponent).orEmpty().ifBlank { "VLESS Server" },
             serverIp = host,
             port = if (uri.port > 0) uri.port else 443,
             secretKey = uuid,
@@ -73,7 +73,7 @@ object VpnConfigParser {
         val params = parseQuery(uri.rawQuery)
 
         return VpnProfile(
-            name = decodeComponent(uri.rawFragment).ifBlank { "Trojan Server" },
+            name = uri.rawFragment?.let(::decodeComponent).orEmpty().ifBlank { "Trojan Server" },
             serverIp = host,
             port = if (uri.port > 0) uri.port else 443,
             secretKey = password,
