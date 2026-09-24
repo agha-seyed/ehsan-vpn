@@ -9,26 +9,27 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import go.Seq
+import libv2ray.CoreCallbackHandler
+import libv2ray.CoreController
+import libv2ray.Libv2ray
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.net.InetSocketAddress
-import java.nio.ByteBuffer
-import java.nio.channels.DatagramChannel
 
 class HorizonVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
+    private var tProxyService: com.v2ray.ang.service.TProxyService? = null
     private var vpnJob: Job? = null
+    private var coreController: CoreController? = null
+    private var foregroundStarted = false
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     companion object {
         const val ACTION_CONNECT = "com.example.horizonvpn.START"
         const val ACTION_DISCONNECT = "com.example.horizonvpn.STOP"
-        
-        // Broadcast keys for UI monitoring
+
         const val EXTRA_IP = "com.example.horizonvpn.EXTRA_IP"
         const val EXTRA_PORT = "com.example.horizonvpn.EXTRA_PORT"
         const val EXTRA_PROTOCOL = "com.example.horizonvpn.EXTRA_PROTOCOL"
@@ -41,17 +42,16 @@ class HorizonVpnService : VpnService() {
         const val EXTRA_FLOW = "com.example.horizonvpn.EXTRA_FLOW"
         const val EXTRA_ALPN = "com.example.horizonvpn.EXTRA_ALPN"
 
-        // State & Stats flows for direct Compose binding
-        private val _vpnState = MutableStateFlow("DISCONNECTED") // CONNECTED, CONNECTING, DISCONNECTED, ERROR
+        private val _vpnState = MutableStateFlow("DISCONNECTED")
         val vpnState: StateFlow<String> = _vpnState
 
         private val _connectedServer = MutableStateFlow<String?>(null)
         val connectedServer: StateFlow<String?> = _connectedServer
 
-        private val _downloadSpeed = MutableStateFlow(0f) // in KB/s
+        private val _downloadSpeed = MutableStateFlow(0f)
         val downloadSpeed: StateFlow<Float> = _downloadSpeed
 
-        private val _uploadSpeed = MutableStateFlow(0f) // in KB/s
+        private val _uploadSpeed = MutableStateFlow(0f)
         val uploadSpeed: StateFlow<Float> = _uploadSpeed
 
         private val _totalBytesDown = MutableStateFlow(0L)
@@ -64,32 +64,66 @@ class HorizonVpnService : VpnService() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+
+        try {
+            Seq.setContext(applicationContext)
+            // This app's Xray configs do not depend on geoip/geosite files,
+            // so an empty asset path is sufficient. The library still needs
+            // a stable XUDP base key.
+            Libv2ray.initCoreEnv(filesDir.absolutePath, android.provider.Settings.Secure.getString(
+                contentResolver,
+                android.provider.Settings.Secure.ANDROID_ID
+            ) ?: packageName)
+            coreController = Libv2ray.newCoreController(CoreCallback())
+        } catch (e: Exception) {
+            Log.e("HorizonVpnService", "Failed to initialize Xray core environment.", e)
+            _vpnState.value = "ERROR"
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e("HorizonVpnService", "Xray native library is unavailable.", e)
+            _vpnState.value = "ERROR"
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent != null) {
-            when (intent.action) {
-                ACTION_CONNECT -> {
-                    val serverIp = intent.getStringExtra(EXTRA_IP) ?: "127.0.0.1"
-                    val port = intent.getIntExtra(EXTRA_PORT, 443)
-                    val protocol = intent.getStringExtra(EXTRA_PROTOCOL) ?: "VLESS"
-                    
-                    _connectedServer.value = "$serverIp:$port ($protocol)"
-                    startVpn(serverIp, port, intent)
+        when (intent?.action) {
+            ACTION_CONNECT -> {
+                showNotification("در حال اتصال", "در حال آماده‌سازی تونل امن")
+
+                val serverIp = intent.getStringExtra(EXTRA_IP)?.trim().orEmpty()
+                val port = intent.getIntExtra(EXTRA_PORT, 443)
+                val protocol = intent.getStringExtra(EXTRA_PROTOCOL) ?: "VLESS"
+
+                if (serverIp.isBlank() || port !in 1..65535) {
+                    _vpnState.value = "ERROR"
+                    Log.e("HorizonVpnService", "Invalid VPN endpoint: $serverIp:$port")
+                    stopSelf(startId)
+                    return START_NOT_STICKY
                 }
-                ACTION_DISCONNECT -> {
-                    stopVpn()
-                }
+
+                _connectedServer.value = "$serverIp:$port ($protocol)"
+                startVpn(serverIp, port, protocol, intent)
+            }
+
+            ACTION_DISCONNECT -> {
+                stopVpn()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf(startId)
             }
         }
-        return START_STICKY
+
+        return START_NOT_STICKY
     }
 
-    private fun startVpn(serverIp: String, port: Int, intent: Intent?) {
-        stopVpn() // Ensure old connection is closed
+    private fun startVpn(
+        serverIp: String,
+        port: Int,
+        protocol: String,
+        intent: Intent?
+    ) {
+        // Keep the service in the foreground while replacing an existing tunnel.
+        cleanupVpn()
         _vpnState.value = "CONNECTING"
-        
-        // Reset speed metrics
+
         _downloadSpeed.value = 0f
         _uploadSpeed.value = 0f
         _totalBytesDown.value = 0L
@@ -97,7 +131,6 @@ class HorizonVpnService : VpnService() {
 
         vpnJob = serviceScope.launch {
             try {
-                // 1. Reconstruct Profile to generate appropriate config
                 val tempProfile = com.example.data.VpnProfile(
                     name = "Active",
                     serverIp = serverIp,
@@ -114,58 +147,48 @@ class HorizonVpnService : VpnService() {
 
                 val configJson = com.example.utils.XrayConfigGenerator.generateConfig(tempProfile)
 
-                // 2. Start Xray Core (Using libv2ray AAR directly)
-                try {
-                    // Safe direct execution without Reflection (Production Ready)
-                    libv2ray.Libv2ray.initCoreEnv(configJson)
-                    Log.i("HorizonVpnService", "Xray core started successfully via direct AAR binding.")
-                } catch (e: Exception) {
-                    // Fallback to init if the version uses the shorter name
-                    try {
-                        val initMethod = libv2ray.Libv2ray::class.java.methods.find { it.name == "init" }
-                        if (initMethod != null) {
-                            initMethod.invoke(null, configJson)
-                            Log.i("HorizonVpnService", "Xray core started successfully via fallback binding.")
-                        } else {
-                            throw Exception("initCoreEnv/init not found")
-                        }
-                    } catch (ex: Exception) {
-                        Log.e("HorizonVpnService", "Failed to start Xray core: ${e.message}")
-                        _vpnState.value = "ERROR"
-                        stopSelf()
-                        return@launch
-                    }
+                val controller = coreController ?: run {
+                    Log.e("HorizonVpnService", "Xray core controller is not initialized.")
+                    failAndStop()
+                    return@launch
                 }
 
-                // 3. Configure Android VpnService to route traffic to the local HTTP/SOCKS port
+                try {
+                    controller.startLoop(configJson, 0)
+                    if (!controller.isRunning) {
+                        throw IllegalStateException("Xray core did not enter running state")
+                    }
+                    Log.i("HorizonVpnService", "Xray core started successfully.")
+                } catch (e: Exception) {
+                    Log.e("HorizonVpnService", "Failed to start Xray core.", e)
+                    failAndStop()
+                    return@launch
+                }
+
                 val builder = Builder()
                     .setSession("HorizonVPN")
                     .setMtu(1500)
                     .addAddress("10.0.0.2", 32)
-                    .addAddress("fd00:1:fd00:1:fd00:1:fd00:1", 128) // Dummy IPv6 to capture IPv6 traffic
-                    .addRoute("0.0.0.0", 0) // Route all IPv4
-                    .addRoute("::", 0) // Route all IPv6 to prevent IPv6 leaks
-                    .addDnsServer("1.1.1.1") // Cloudflare DNS (Primary)
-                    .addDnsServer("1.0.0.1") // Cloudflare DNS (Secondary)
-                    .addDnsServer("2606:4700:4700::1111") // Cloudflare IPv6 DNS
-                    .setBlocking(true) // Prevent cleartext leaks while setting up
-                    .allowBypass() // Allow apps to bypass if not in VPN
+                    .addAddress("fd00:1:fd00:1:fd00:1:fd00:1", 128)
+                    .addRoute("0.0.0.0", 0)
+                    .addRoute("::", 0)
+                    .addDnsServer("1.1.1.1")
+                    .addDnsServer("1.0.0.1")
+                    .addDnsServer("2606:4700:4700::1111")
+                    .setBlocking(true)
                     .setConfigureIntent(
                         PendingIntent.getActivity(
-                            this@HorizonVpnService, 
-                            0, 
+                            this@HorizonVpnService,
+                            0,
                             Intent(this@HorizonVpnService, MainActivity::class.java),
                             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
                         )
                     )
 
-                // The Magic Trick: Instead of setHttpProxy, we use the real C++ tun2socks engine!
-                // This routes 100% of UDP/TCP packets globally
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     builder.setMetered(false)
                 }
 
-                // Apply Split Tunneling
                 val bypassApps = intent?.getStringArrayListExtra(EXTRA_BYPASS_APPS)
                 if (!bypassApps.isNullOrEmpty()) {
                     for (appPkg in bypassApps) {
@@ -178,99 +201,146 @@ class HorizonVpnService : VpnService() {
                 }
 
                 vpnInterface = builder.establish()
-                
-                if (vpnInterface != null) {
-                    // Start the C++ native TUN -> SOCKS5 proxy!
-                    try {
-                        val tProxy = com.v2ray.ang.service.TProxyService(this@HorizonVpnService, vpnInterface!!)
-                        tProxy.startTun2Socks(10808) // Matches the inbound SOCKS port in XrayConfigGenerator
-                        Log.i("HorizonVpnService", "tun2socks native C++ layer started successfully!")
-                    } catch (e: Exception) {
-                        Log.e("HorizonVpnService", "Failed to start native tun2socks", e)
-                    }
+                val establishedInterface = vpnInterface
 
-                    _vpnState.value = "CONNECTED"
-                    showNotification("اتصال امن برقرار شد", "تونل ++C ۱۰۰٪ روی $serverIp فعال است")
-                    runTunnelLoop()
-                } else {
-                    _vpnState.value = "ERROR"
-                    Log.e("HorizonVpnService", "Failed to establish VPN Interface.")
+                if (establishedInterface == null) {
+                    Log.e("HorizonVpnService", "Failed to establish VPN interface.")
+                    failAndStop()
+                    return@launch
                 }
+
+                tProxyService = com.v2ray.ang.service.TProxyService(
+                    this@HorizonVpnService,
+                    establishedInterface
+                )
+
+                if (tProxyService?.startTun2Socks(10808) != true) {
+                    Log.e("HorizonVpnService", "Native tun2socks failed to start.")
+                    failAndStop()
+                    return@launch
+                }
+
+                _vpnState.value = "CONNECTED"
+                showNotification("اتصال امن برقرار شد", "تونل روی $serverIp فعال است")
+                runTunnelLoop()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("HorizonVpnService", "VPN Error", e)
-                _vpnState.value = "ERROR"
-                stopSelf()
+                failAndStop()
             }
         }
     }
 
-    private fun stopVpn() {
-        vpnJob?.cancel()
+    private fun failAndStop() {
+        _vpnState.value = "ERROR"
+        cleanupVpn(cancelJob = false)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        foregroundStarted = false
+        stopSelf()
+    }
+
+    private fun cleanupVpn(cancelJob: Boolean = true) {
+        if (cancelJob) {
+            vpnJob?.cancel()
+        }
         vpnJob = null
+
+        try {
+            tProxyService?.stopTun2Socks()
+        } catch (e: Exception) {
+            Log.e("HorizonVpnService", "Error stopping tun2socks.", e)
+        }
+        tProxyService = null
+
+        try {
+            coreController?.let { controller ->
+                if (controller.isRunning) {
+                    controller.stopLoop()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("HorizonVpnService", "Error stopping Xray core.", e)
+        }
+
         try {
             vpnInterface?.close()
         } catch (e: Exception) {
-            Log.e("HorizonVpnService", "Error closing VPN Interface", e)
+            Log.e("HorizonVpnService", "Error closing VPN interface.", e)
         }
         vpnInterface = null
-        _vpnState.value = "DISCONNECTED"
+
         _connectedServer.value = null
         _downloadSpeed.value = 0f
         _uploadSpeed.value = 0f
-        showNotification("اتصال غیرفعال شد", "پروتکل‌های امنیتی آماده به کار")
     }
 
-    /**
-     * Executes the secure processing loop, simulating bandwidth traffic or proxy connection
-     * This provides interactive feedback on the UI (changing Speed graph, real elapsed data, etc.)
-     */
+    private fun stopVpn(showStoppedNotification: Boolean = true) {
+        cleanupVpn()
+        _vpnState.value = "DISCONNECTED"
+
+        if (showStoppedNotification) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            foregroundStarted = false
+        }
+    }
+
     private suspend fun runTunnelLoop() {
-        var dummySec = 0
         var lastTotalRx = 0L
         var lastTotalTx = 0L
         var errorCount = 0
 
-        while (kotlinx.coroutines.currentCoroutineContext().isActive && _vpnState.value == "CONNECTED") {
+        while (currentCoroutineContext().isActive && _vpnState.value == "CONNECTED") {
             delay(1000)
-            dummySec++
-            
-            // Read REAL traffic stats from C++ Tun2Socks engine!
+
             val stats = try {
                 com.v2ray.ang.service.TProxyService.TProxyGetStats()
             } catch (e: Exception) {
                 null
             }
-            
+
             if (stats != null && stats.size >= 2) {
                 errorCount = 0
-                val currentTx = stats[0] // Bytes uploaded
-                val currentRx = stats[1] // Bytes downloaded
+                val currentTx = stats[0]
+                val currentRx = stats[1]
 
-                // Calculate speed in KB/s
-                val dSpeed = if (lastTotalRx > 0) ((currentRx - lastTotalRx) / 1024f) else 0f
-                val uSpeed = if (lastTotalTx > 0) ((currentTx - lastTotalTx) / 1024f) else 0f
+                val dSpeed = if (lastTotalRx > 0) {
+                    (currentRx - lastTotalRx).coerceAtLeast(0L) / 1024f
+                } else 0f
+                val uSpeed = if (lastTotalTx > 0) {
+                    (currentTx - lastTotalTx).coerceAtLeast(0L) / 1024f
+                } else 0f
 
-                _downloadSpeed.value = maxOf(0f, dSpeed)
-                _uploadSpeed.value = maxOf(0f, uSpeed)
-                
+                _downloadSpeed.value = dSpeed
+                _uploadSpeed.value = uSpeed
                 _totalBytesDown.value = currentRx
                 _totalBytesUp.value = currentTx
 
                 lastTotalTx = currentTx
                 lastTotalRx = currentRx
 
-                // Real-time speed output nested on the system tray widget
-                showNotification("سپر امنیتی فعال است", "درحال مسیریابی کدگذاری شده", maxOf(0f, dSpeed))
+                showNotification(
+                    "سپر امنیتی فعال است",
+                    "درحال مسیریابی کدگذاری شده",
+                    dSpeed
+                )
             } else {
-                errorCount++
                 _downloadSpeed.value = 0f
                 _uploadSpeed.value = 0f
-                
-                // If stats fail continuously for 10 seconds, assume connection dropped
-                if (errorCount >= 10) {
-                    Log.e("HorizonVpnService", "Tunnel loop stats failed 10 times. Assuming disconnect.")
-                    stopVpn()
-                    break
+
+                // Some native builds may not expose stats immediately (or at all).
+                // Do not tear down a working tunnel just because the optional stats
+                // endpoint returned null. Only treat it as a tunnel failure when the
+                // native tun2socks engine itself is no longer running.
+                if (tProxyService?.isStarted() != true) {
+                    errorCount++
+                    if (errorCount >= 10) {
+                        Log.e("HorizonVpnService", "tun2socks stopped unexpectedly.")
+                        failAndStop()
+                        break
+                    }
+                } else {
+                    errorCount = 0
                 }
             }
         }
@@ -283,15 +353,22 @@ class HorizonVpnService : VpnService() {
                 "وضعیت اتصال Horizon VPN",
                 NotificationManager.IMPORTANCE_LOW
             )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(channel)
+            getSystemService(NotificationManager::class.java)
+                ?.createNotificationChannel(channel)
         }
     }
 
-    private fun showNotification(title: String, text: String, downloadKbps: Float = 0f) {
+    private fun showNotification(
+        title: String,
+        text: String,
+        downloadKbps: Float = 0f
+    ) {
         val intent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            this,
+            0,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         val disconnectIntent = Intent(this, HorizonVpnService::class.java).apply {
@@ -328,20 +405,45 @@ class HorizonVpnService : VpnService() {
             )
             .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                1,
-                notification,
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED
-            )
+        if (!foregroundStarted) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(
+                    1,
+                    notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED
+                )
+            } else {
+                startForeground(1, notification)
+            }
+            foregroundStarted = true
         } else {
-            startForeground(1, notification)
+            getSystemService(NotificationManager::class.java)?.notify(1, notification)
+        }
+    }
+
+    private class CoreCallback : CoreCallbackHandler {
+        override fun startup(): Long = 0
+
+        override fun shutdown(): Long = 0
+
+        override fun onEmitStatus(status: Long, message: String?): Long {
+            Log.d("HorizonVpnService", "Xray core status: " + status + " " + message.orEmpty())
+            return 0
         }
     }
 
     override fun onDestroy() {
-        super.onDestroy()
-        stopVpn()
+        cleanupVpn()
+        try {
+            coreController?.let { controller ->
+                if (controller.isRunning) controller.stopLoop()
+            }
+        } catch (e: Exception) {
+            Log.e("HorizonVpnService", "Error stopping Xray core in onDestroy.", e)
+        }
+        coreController = null
+        foregroundStarted = false
         serviceScope.cancel()
+        super.onDestroy()
     }
 }

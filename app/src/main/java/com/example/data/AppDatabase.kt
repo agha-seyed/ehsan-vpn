@@ -9,7 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-@Database(entities = [VpnProfile::class], version = 3, exportSchema = false)
+@Database(entities = [VpnProfile::class], version = 4, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun vpnProfileDao(): VpnProfileDao
 
@@ -25,10 +25,19 @@ abstract class AppDatabase : RoomDatabase() {
                     "horizon_vpn_database"
                 )
                 .addCallback(AppDatabaseCallback(scope))
-                .fallbackToDestructiveMigration()
+                // Version 3 had the same schema; keep existing profiles intact.
+                .addMigrations(MIGRATION_3_4)
+                // Very old development databases (v1/v2) can be recreated explicitly.
+                .fallbackToDestructiveMigrationFrom(1, 2)
                 .build()
                 INSTANCE = instance
                 instance
+            }
+        }
+
+        private val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // No schema changes in v4. This migration exists to prevent accidental data loss.
             }
         }
     }
@@ -44,36 +53,36 @@ abstract class AppDatabase : RoomDatabase() {
                     // Pre-populate with beautiful, functional server templates
                     dao.insertProfile(
                         VpnProfile(
-                            name = "⚡ آلمان - VLESS Reality (پر سرعت)",
-                            serverIp = "185.228.136.42",
+                            name = "⚙️ نمونه VLESS Reality (غیرفعال)",
+                            serverIp = "example.com",
                             port = 443,
-                            secretKey = "vless://ae72c918-bb20-4357-be24-5cc0df5988a2@185.228.136.42:443?security=reality&sni=www.google.com&flow=xtls-rprx-vision",
+                            secretKey = "",
                             protocol = "VLESS (Reality)",
-                            sni = "www.google.com",
-                            latencyMs = 84,
-                            isActive = true
-                        )
-                    )
-                    dao.insertProfile(
-                        VpnProfile(
-                            name = "🛡️ فنلاند - Trojan Stealth Filter",
-                            serverIp = "95.216.14.88",
-                            port = 8443,
-                            secretKey = "trojan://superstealthsecret6a892b@95.216.14.88:8443?sni=www.wikipedia.org",
-                            protocol = "Trojan",
-                            sni = "www.wikipedia.org",
-                            latencyMs = 112,
+                            sni = "example.com",
+                            latencyMs = -1,
                             isActive = false
                         )
                     )
                     dao.insertProfile(
                         VpnProfile(
-                            name = "🚀 سرور مجازی من (جک صدمتن - قابل ویرایش)",
-                            serverIp = "192.168.1.1",
+                            name = "⚙️ نمونه Trojan (غیرفعال)",
+                            serverIp = "example.com",
                             port = 443,
-                            secretKey = "vless://your-vps-uuid-goes-here@your_server_ip:443?security=reality&sni=www.google.com",
+                            secretKey = "",
+                            protocol = "Trojan",
+                            sni = "example.com",
+                            latencyMs = -1,
+                            isActive = false
+                        )
+                    )
+                    dao.insertProfile(
+                        VpnProfile(
+                            name = "⚙️ سرور شخصی من (برای ویرایش)",
+                            serverIp = "example.com",
+                            port = 443,
+                            secretKey = "",
                             protocol = "VLESS (Reality)",
-                            sni = "www.google.com",
+                            sni = "example.com",
                             latencyMs = -1,
                             isActive = false
                         )

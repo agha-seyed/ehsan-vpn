@@ -1,14 +1,14 @@
 package com.example
 
 import android.content.Intent
-import android.graphics.drawable.Icon
+import androidx.core.content.ContextCompat
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.firstOrNull
 
 /**
- * Provides a Quick Settings Tile (pull-down menu) to toggle the VPN connection.
+ * Provides a Quick Settings Tile to toggle the VPN connection.
  */
 class VpnTileService : TileService() {
 
@@ -22,26 +22,23 @@ class VpnTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
-        
+
         val qsTile = qsTile ?: return
-        
+
         if (qsTile.state == Tile.STATE_ACTIVE) {
-            // Stop VPN
             val intent = Intent(this, HorizonVpnService::class.java).apply {
                 action = HorizonVpnService.ACTION_DISCONNECT
             }
             startService(intent)
-            
+
             qsTile.state = Tile.STATE_INACTIVE
             qsTile.label = "Ehsan VPN"
             qsTile.updateTile()
         } else {
-            // Start VPN
-            // We need to fetch the active profile from the DB
             scope.launch(Dispatchers.IO) {
                 val db = com.example.data.AppDatabase.getDatabase(this@VpnTileService, scope)
                 val activeProfile = db.vpnProfileDao().getActiveProfile().firstOrNull()
-                
+
                 withContext(Dispatchers.Main) {
                     if (activeProfile != null) {
                         val intent = Intent(this@VpnTileService, HorizonVpnService::class.java).apply {
@@ -57,13 +54,15 @@ class VpnTileService : TileService() {
                             putExtra(HorizonVpnService.EXTRA_FLOW, activeProfile.flow)
                             putExtra(HorizonVpnService.EXTRA_ALPN, activeProfile.alpn)
                         }
-                        startService(intent)
-                        
-                        qsTile.state = Tile.STATE_ACTIVE
-                        qsTile.label = "متصل"
+
+                        // TileService can be invoked while the app UI is not visible.
+                        ContextCompat.startForegroundService(this@VpnTileService, intent)
+
+                        // Do not claim CONNECTED before the VPN service confirms it.
+                        qsTile.state = Tile.STATE_UNAVAILABLE
+                        qsTile.label = "در حال اتصال"
                         qsTile.updateTile()
                     } else {
-                        // Open app to select a server
                         val mainIntent = Intent(this@VpnTileService, MainActivity::class.java).apply {
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
@@ -76,26 +75,20 @@ class VpnTileService : TileService() {
 
     private fun updateTileState() {
         val qsTile = qsTile ?: return
-        
-        // A simple check could be reading a static state or SharedPrefs.
-        // For accurate real-time state, you might want to use a bound service or global state flow.
-        // In this implementation, we read the static flow from HorizonVpnService.
-        
-        val currentState = HorizonVpnService.vpnState.value
-        if (currentState == "CONNECTED") {
-            qsTile.state = Tile.STATE_ACTIVE
-            qsTile.label = "متصل"
-        } else if (currentState == "CONNECTING") {
-            qsTile.state = Tile.STATE_UNAVAILABLE
-            qsTile.label = "در حال اتصال"
-        } else {
-            qsTile.state = Tile.STATE_INACTIVE
-            qsTile.label = "Ehsan VPN"
+        when (HorizonVpnService.vpnState.value) {
+            "CONNECTED" -> {
+                qsTile.state = Tile.STATE_ACTIVE
+                qsTile.label = "متصل"
+            }
+            "CONNECTING" -> {
+                qsTile.state = Tile.STATE_UNAVAILABLE
+                qsTile.label = "در حال اتصال"
+            }
+            else -> {
+                qsTile.state = Tile.STATE_INACTIVE
+                qsTile.label = "Ehsan VPN"
+            }
         }
-        
-        // Note: Icon can be customized here
-        // qsTile.icon = Icon.createWithResource(this, R.drawable.ic_vpn_key)
-        
         qsTile.updateTile()
     }
 
