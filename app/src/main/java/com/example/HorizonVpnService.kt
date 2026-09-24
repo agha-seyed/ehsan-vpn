@@ -63,7 +63,6 @@ class HorizonVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_CONNECT -> {
-                // Promote to foreground before doing asynchronous VPN/core work.
                 showNotification("در حال اتصال", "در حال آماده‌سازی تونل امن")
 
                 val serverIp = intent.getStringExtra(EXTRA_IP)?.trim().orEmpty()
@@ -82,7 +81,7 @@ class HorizonVpnService : VpnService() {
             }
 
             ACTION_DISCONNECT -> {
-                stopVpn(showStoppedNotification = false)
+                stopVpn()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf(startId)
             }
@@ -198,10 +197,7 @@ class HorizonVpnService : VpnService() {
                 }
 
                 _vpnState.value = "CONNECTED"
-                showNotification(
-                    "اتصال امن برقرار شد",
-                    "تونل روی $serverIp فعال است"
-                )
+                showNotification("اتصال امن برقرار شد", "تونل روی $serverIp فعال است")
                 runTunnelLoop()
             } catch (e: CancellationException) {
                 throw e
@@ -214,16 +210,14 @@ class HorizonVpnService : VpnService() {
 
     private fun failAndStop() {
         _vpnState.value = "ERROR"
-        cleanupVpn()
+        cleanupVpn(cancelJob = false)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
-    private fun cleanupVpn() {
-        vpnJob?.let { job ->
-            if (job != currentCoroutineContextJob()) {
-                job.cancel()
-            }
+    private fun cleanupVpn(cancelJob: Boolean = true) {
+        if (cancelJob) {
+            vpnJob?.cancel()
         }
         vpnJob = null
 
@@ -244,10 +238,6 @@ class HorizonVpnService : VpnService() {
         _connectedServer.value = null
         _downloadSpeed.value = 0f
         _uploadSpeed.value = 0f
-    }
-
-    private fun currentCoroutineContextJob(): Job? {
-        return kotlin.coroutines.coroutineContext[Job]
     }
 
     private fun stopVpn(showStoppedNotification: Boolean = true) {
