@@ -96,7 +96,8 @@ class HorizonVpnService : VpnService() {
         protocol: String,
         intent: Intent?
     ) {
-        stopVpn(showStoppedNotification = false)
+        // Keep the service in the foreground while replacing an existing tunnel.
+        cleanupVpn()
         _vpnState.value = "CONNECTING"
 
         _downloadSpeed.value = 0f
