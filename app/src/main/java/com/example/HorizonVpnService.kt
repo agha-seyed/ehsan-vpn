@@ -405,6 +405,17 @@ class HorizonVpnService : VpnService() {
         }
     }
 
+    private class CoreCallback : CoreCallbackHandler {
+        override fun startup(): Long = 0
+
+        override fun shutdown(): Long = 0
+
+        override fun onEmitStatus(status: Long, message: String?): Long {
+            Log.d("HorizonVpnService", "Xray core status: " + status + " " + message.orEmpty())
+            return 0
+        }
+    }
+
     override fun onDestroy() {
         cleanupVpn()
         try {
