@@ -34,6 +34,12 @@ abstract class AppDatabase : RoomDatabase() {
                 instance
             }
         }
+
+        private val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // No schema changes in v4. This migration exists to prevent accidental data loss.
+            }
+        }
     }
 
     private class AppDatabaseCallback(
