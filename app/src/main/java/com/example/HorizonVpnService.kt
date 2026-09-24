@@ -9,6 +9,10 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import go.Seq
+import libv2ray.CoreCallbackHandler
+import libv2ray.CoreController
+import libv2ray.Libv2ray
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +22,7 @@ class HorizonVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var tProxyService: com.v2ray.ang.service.TProxyService? = null
     private var vpnJob: Job? = null
+    private var coreController: CoreController? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     companion object {
@@ -58,6 +63,24 @@ class HorizonVpnService : VpnService() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+
+        try {
+            Seq.setContext(applicationContext)
+            // This app's Xray configs do not depend on geoip/geosite files,
+            // so an empty asset path is sufficient. The library still needs
+            // a stable XUDP base key.
+            Libv2ray.initCoreEnv(filesDir.absolutePath, android.provider.Settings.Secure.getString(
+                contentResolver,
+                android.provider.Settings.Secure.ANDROID_ID
+            ) ?: packageName)
+            coreController = Libv2ray.newCoreController(CoreCallback())
+        } catch (e: Exception) {
+            Log.e("HorizonVpnService", "Failed to initialize Xray core environment.", e)
+            _vpnState.value = "ERROR"
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e("HorizonVpnService", "Xray native library is unavailable.", e)
+            _vpnState.value = "ERROR"
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -123,23 +146,22 @@ class HorizonVpnService : VpnService() {
 
                 val configJson = com.example.utils.XrayConfigGenerator.generateConfig(tempProfile)
 
+                val controller = coreController ?: run {
+                    Log.e("HorizonVpnService", "Xray core controller is not initialized.")
+                    failAndStop()
+                    return@launch
+                }
+
                 try {
-                    libv2ray.Libv2ray.initCoreEnv(configJson)
+                    controller.startLoop(configJson, 0)
+                    if (!controller.isRunning) {
+                        throw IllegalStateException("Xray core did not enter running state")
+                    }
                     Log.i("HorizonVpnService", "Xray core started successfully.")
                 } catch (e: Exception) {
-                    try {
-                        val initMethod = libv2ray.Libv2ray::class.java.methods.find { it.name == "init" }
-                        if (initMethod != null) {
-                            initMethod.invoke(null, configJson)
-                            Log.i("HorizonVpnService", "Xray core started via fallback binding.")
-                        } else {
-                            throw IllegalStateException("initCoreEnv/init not found", e)
-                        }
-                    } catch (ex: Exception) {
-                        Log.e("HorizonVpnService", "Failed to start Xray core.", ex)
-                        failAndStop()
-                        return@launch
-                    }
+                    Log.e("HorizonVpnService", "Failed to start Xray core.", e)
+                    failAndStop()
+                    return@launch
                 }
 
                 val builder = Builder()
@@ -228,6 +250,16 @@ class HorizonVpnService : VpnService() {
             Log.e("HorizonVpnService", "Error stopping tun2socks.", e)
         }
         tProxyService = null
+
+        try {
+            coreController?.let { controller ->
+                if (controller.isRunning) {
+                    controller.stopLoop()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("HorizonVpnService", "Error stopping Xray core.", e)
+        }
 
         try {
             vpnInterface?.close()
@@ -375,6 +407,14 @@ class HorizonVpnService : VpnService() {
 
     override fun onDestroy() {
         cleanupVpn()
+        try {
+            coreController?.let { controller ->
+                if (controller.isRunning) controller.stopLoop()
+            }
+        } catch (e: Exception) {
+            Log.e("HorizonVpnService", "Error stopping Xray core in onDestroy.", e)
+        }
+        coreController = null
         serviceScope.cancel()
         super.onDestroy()
     }
