@@ -23,6 +23,7 @@ class HorizonVpnService : VpnService() {
     private var tProxyService: com.v2ray.ang.service.TProxyService? = null
     private var vpnJob: Job? = null
     private var coreController: CoreController? = null
+    private var foregroundStarted = false
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     companion object {
@@ -235,6 +236,7 @@ class HorizonVpnService : VpnService() {
         _vpnState.value = "ERROR"
         cleanupVpn(cancelJob = false)
         stopForeground(STOP_FOREGROUND_REMOVE)
+        foregroundStarted = false
         stopSelf()
     }
 
@@ -279,6 +281,7 @@ class HorizonVpnService : VpnService() {
 
         if (showStoppedNotification) {
             stopForeground(STOP_FOREGROUND_REMOVE)
+            foregroundStarted = false
         }
     }
 
@@ -322,14 +325,22 @@ class HorizonVpnService : VpnService() {
                     dSpeed
                 )
             } else {
-                errorCount++
                 _downloadSpeed.value = 0f
                 _uploadSpeed.value = 0f
 
-                if (errorCount >= 10) {
-                    Log.e("HorizonVpnService", "Tunnel statistics failed repeatedly.")
-                    failAndStop()
-                    break
+                // Some native builds may not expose stats immediately (or at all).
+                // Do not tear down a working tunnel just because the optional stats
+                // endpoint returned null. Only treat it as a tunnel failure when the
+                // native tun2socks engine itself is no longer running.
+                if (tProxyService?.isStarted() != true) {
+                    errorCount++
+                    if (errorCount >= 10) {
+                        Log.e("HorizonVpnService", "tun2socks stopped unexpectedly.")
+                        failAndStop()
+                        break
+                    }
+                } else {
+                    errorCount = 0
                 }
             }
         }
@@ -394,14 +405,19 @@ class HorizonVpnService : VpnService() {
             )
             .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                1,
-                notification,
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED
-            )
+        if (!foregroundStarted) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(
+                    1,
+                    notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED
+                )
+            } else {
+                startForeground(1, notification)
+            }
+            foregroundStarted = true
         } else {
-            startForeground(1, notification)
+            getSystemService(NotificationManager::class.java)?.notify(1, notification)
         }
     }
 
@@ -426,6 +442,7 @@ class HorizonVpnService : VpnService() {
             Log.e("HorizonVpnService", "Error stopping Xray core in onDestroy.", e)
         }
         coreController = null
+        foregroundStarted = false
         serviceScope.cancel()
         super.onDestroy()
     }
