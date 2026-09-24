@@ -9,6 +9,9 @@ object XrayConfigGenerator {
      * Converts a VpnProfile into a full Xray JSON config.
      */
     fun generateConfig(profile: com.example.data.VpnProfile): String {
+        require(profile.serverIp.isNotBlank()) { "Server address is required" }
+        require(profile.port in 1..65535) { "Server port is invalid: ${profile.port}" }
+
         return when {
             profile.protocol.contains("VLESS", ignoreCase = true) -> generateRealityConfig(
                 serverIp = profile.serverIp,
@@ -67,6 +70,7 @@ object XrayConfigGenerator {
             put("streamSettings", streamSettings)
         }
         
+        require(profile.secretKey.isNotBlank()) { "Trojan password is required" }
         outbounds.put(0, trojanOutbound)
         return config.toString(4)
     }
@@ -94,6 +98,7 @@ object XrayConfigGenerator {
             put("settings", settings)
         }
         
+        require(profile.secretKey.isNotBlank()) { "Shadowsocks method:password is required" }
         outbounds.put(0, ssOutbound)
         return config.toString(4)
     }
@@ -137,6 +142,11 @@ object XrayConfigGenerator {
         alpn: String = ""
     ): String {
         
+        require(uuid.isNotBlank()) { "VLESS UUID is required" }
+        require(pbk.isNotBlank()) { "Reality public key is required" }
+        require(sid.isNotBlank()) { "Reality short ID is required" }
+        require(sni.isNotBlank()) { "Reality SNI is required" }
+
         // Root config
         val config = JSONObject()
         
@@ -177,7 +187,7 @@ object XrayConfigGenerator {
                     val user = JSONObject().apply {
                         put("id", uuid)
                         put("encryption", "none")
-                        put("flow", flow)
+                        if (flow.isNotBlank()) put("flow", flow)
                     }
                     users.put(user)
                     put("users", users)
